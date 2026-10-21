@@ -94,10 +94,10 @@ jobs:
           pixi run publish-conda
 
           # Publish to PyPI (for actual release)
-          pixi run publish-pypi
+          # pixi run publish-pypi
 
           # Publish to Test PyPI (for test release)
-          # pixi run publish-test-pypi
+          pixi run publish-test-pypi
 
   publish-crates:
     needs: [build-conda, build-pypi]
