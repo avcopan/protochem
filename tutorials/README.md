@@ -1,6 +1,6 @@
 # Tutorials
 
-Stage 1 tutorials (see `../PLAN.md` for the full sequence and status). Each folder
+Stage 1 tutorials (see `~/code/sm/PLAN.md` for the full sequence and status). Each folder
 has a `README.md` (background, reading, tasks) and a stub module that you copy into
 the sandbox's `src/`, then fill in until its tests pass.
 

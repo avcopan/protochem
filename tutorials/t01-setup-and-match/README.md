@@ -32,7 +32,8 @@ Python identifier. Some options:
 
 | name | note |
 |---|---|
-| **`ferrochem`** | Rust = iron oxide, "ferro" + chem. Short, fun, and clearly not the real package. *(my pick)* |
+| **`protochem`** | what we went with: a prototype, clearly not the real package |
+| `protochem` | Rust = iron oxide, "ferro" + chem |
 | `smg_sandbox` | says exactly what it is |
 | `rusty_rings` | a nod to ring closures in SMILES |
 
@@ -41,7 +42,7 @@ Python identifier. Some options:
 From `~/code/sm/` (so it sits next to the other repos):
 
 ```sh
-copier copy ~/code/sm/copier-pixi-rust ferrochem   # or gh:avcopan/copier-pixi-rust
+copier copy ~/code/sm/copier-pixi-rust protochem   # or gh:avcopan/copier-pixi-rust
 ```
 
 Answers:
@@ -56,19 +57,18 @@ template README. A GitHub remote is optional; pushing to a private repo is nice
 for backup. Then:
 
 ```sh
-cd ferrochem
+cd protochem
 pixi run init
 ```
 
-Then move the tutorials and the plan into the sandbox so everything lives
-together:
+Then move the tutorials into the sandbox:
 
 ```sh
 mv ../tutorials ./tutorials
-mv ../PLAN.md ./PLAN.md
-mv ../TODO.md ./TODO.md
-git add tutorials PLAN.md TODO.md && git commit -m "Add plan, TODO and tutorials"
+git add tutorials && git commit -m "Add initial tutorials"
 ```
+
+(`PLAN.md` and `TODO.md` stay in `~/code/sm/`, outside the repo.)
 
 ### Tour the tooling (≈ 15 min)
 
@@ -90,7 +90,7 @@ Notes:
   you're mid-exercise (and `pixi run hooks on` afterwards).
 - Read `src/lib.rs`, `src/greet.rs` and `src/python.rs`. That's the whole pattern:
   plain Rust in a module, re-exported from `lib.rs`, wrapped for Python in
-  `python.rs`.
+  `python.rs`. [`WIRING.md`](WIRING.md) explains each piece line by line.
 
 ## Part 2: The exercise
 
@@ -120,7 +120,7 @@ The doc comments explain each function. Hints:
   then loop to find the first valence `>= bond_order_sum`.
 - Replace the `ignore` in the `symbol` doc example with a working doc test
   (doc tests are written from the crate user's point of view:
-  `use ferrochem::element::symbol;`).
+  `use protochem::element::symbol;`).
 
 ## Part 3: Expose one function to Python
 
@@ -130,8 +130,8 @@ In `src/python.rs`, wrap `implicit_hydrogens` as a `#[pyfunction]` (copy the
 
 ```python
 def test__implicit_hydrogens() -> None:
-    assert ferrochem.implicit_hydrogens(6, 1) == 3
-    assert ferrochem.implicit_hydrogens(26, 0) is None  # Option -> None
+    assert protochem.implicit_hydrogens(6, 1) == 3
+    assert protochem.implicit_hydrogens(26, 0) is None  # Option -> None
 ```
 
 Run `pixi run test`. Notice how `Option<u8>` became `int | None` in the
