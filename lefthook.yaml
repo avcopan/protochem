@@ -1,0 +1,65 @@
+# Commands are run in the order of their names. Commands tagged "check" are also run by
+# `pixi run pre-commit-check`, which skips the tests (see pixi.toml).
+pre-commit:
+  parallel: false
+  exclude:
+    - .pixi/
+  commands: &pre-commit-commands
+    0-conflicts:
+      run: |
+        if git grep -n -E '^(<<<<<<<|>>>>>>>)( |$)'; then
+          echo "Error: unresolved merge conflict markers (listed above)"
+          exit 1
+        fi
+      tags: [check]
+
+    1-local:
+      run: pixi run -e dev local stop
+      tags: [check]
+
+    2-stubs:
+      run: pixi run -e dev stubs
+      tags: [check]
+
+    3-fmt:
+      run: pixi run -e dev fmt
+      tags: [check]
+
+    4-lint:
+      run: pixi run -e dev lint
+      tags: [check]
+
+    5-types:
+      run: pixi run -e dev types
+      tags: [check]
+
+    6-test-rs:
+      run: pixi run -e dev test-rs
+      tags: [check]
+
+    7-test:
+      run: pixi run -e test test
+
+    8-test-lowest:
+      run: pixi run -e test-lowest test
+
+    9-workflows:
+      run: pixi run -e dev workflows
+      tags: [check]
+
+    10-check-clean:
+      run: git diff --exit-code
+      tags: [check]
+
+# Same as pre-commit, but with local dependencies (see scripts/local.sh)
+pre-commit-local:
+  parallel: false
+  exclude:
+    - .pixi/
+  commands:
+    <<: *pre-commit-commands
+    1-local:
+      run: pixi run -e dev local start
+    10-check-clean:
+      run: git diff --exit-code
+      skip: true  # local dependencies modify pixi.toml

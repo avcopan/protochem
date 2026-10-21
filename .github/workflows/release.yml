@@ -1,0 +1,153 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+
+env:
+  # Install the package in non-editable mode, so that the environments restored by the
+  # Pixi cache are complete (editable installs place the compiled module in python/,
+  # which is not cached, and Pixi does not rebuild it because no source file changed)
+  BUILD_EDITABLE_PYTHON: "false"
+
+jobs:
+  test:
+    uses: ./.github/workflows/test.yml
+
+  build-conda:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: prefix-dev/setup-pixi@v0.11.2
+        with:
+          cache: true
+          environments: dev
+
+      - name: Build conda package
+        run: pixi run build-conda
+
+      - name: Upload conda package
+        uses: actions/upload-artifact@v6
+        with:
+          name: conda-package
+          path: dist/*.conda
+
+  build-pypi:
+    needs: test
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Build in a manylinux container, so that the wheel works on most Linux systems
+      - name: Build wheel
+        uses: PyO3/maturin-action@v1
+        with:
+          args: --release --locked --out dist
+          manylinux: auto
+
+      - name: Build source distribution
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+
+      - name: Upload PyPI packages
+        uses: actions/upload-artifact@v6
+        with:
+          name: pypi-packages
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+  publish:
+    needs: [build-conda, build-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # for prefix.dev and PyPI Trusted Publishing
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: prefix-dev/setup-pixi@v0.11.2
+        with:
+          cache: true
+          environments: dev
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Publish conda and PyPI packages
+        run: |
+          # Publish to prefix.dev
+          pixi run publish-conda
+
+          # Publish to PyPI (for actual release)
+          pixi run publish-pypi
+
+          # Publish to Test PyPI (for test release)
+          # pixi run publish-test-pypi
+
+  publish-crates:
+    needs: [build-conda, build-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write  # for crates.io Trusted Publishing
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: prefix-dev/setup-pixi@v0.11.2
+        with:
+          cache: true
+          environments: dev
+
+      - name: Authenticate with crates.io
+        id: crates-io-auth
+        uses: rust-lang/crates-io-auth-action@v1
+
+      - name: Publish crate
+        run: pixi run publish-crates
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.crates-io-auth.outputs.token }}
+
+  release:
+    needs: [publish, publish-crates]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # to create the GitHub release
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Download release artifacts
+        uses: actions/download-artifact@v7
+        with:
+          path: dist/
+          merge-multiple: true
+
+      - name: Extract release notes
+        id: extract-release-notes
+        uses: ffurrer2/extract-release-notes@v2
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          body: ${{ steps.extract-release-notes.outputs.release_notes }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/*.conda

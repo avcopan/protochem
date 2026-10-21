@@ -1,0 +1,11 @@
+# Changes here will be overwritten by Copier
+_commit: v0.1.5
+_src_path: gh:avcopan/copier-pixi-rust
+author_email: avcopan@uga.edu
+author_name: Andreas V. Copan
+description: Rust learning sandbox for implementing cheminformatics algorithms
+github_org_name: avcopan
+package_name: protochem
+polars_plugin: false
+prefix_channel: avcopan/automech
+repo_name: protochem

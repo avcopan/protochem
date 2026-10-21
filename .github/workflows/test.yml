@@ -1,0 +1,52 @@
+name: test
+
+on:
+  push:
+    branches: ["**"]  # all branches, but not tags (releases run this workflow themselves)
+  pull_request:
+  workflow_dispatch:
+  workflow_call:  # allows the release workflow to run the tests first
+
+env:
+  # Install the package in non-editable mode, so that the environments restored by the
+  # Pixi cache are complete (editable installs place the compiled module in python/,
+  # which is not cached, and Pixi does not rebuild it because no source file changed)
+  BUILD_EDITABLE_PYTHON: "false"
+
+jobs:
+  pre-commit-check:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v6
+
+      # Cache Rust build artifacts in target/ to speed up compilation
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: prefix-dev/setup-pixi@v0.11.2
+        with:
+          cache: true
+          environments: dev test
+
+      - name: Run pre-commit hooks, except the tests (run below)
+        run: pixi run pre-commit-check
+
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false  # report results for every environment
+      matrix:
+        # test: highest compatible dependency versions
+        # test-lowest: lowest versions allowed by the lower bounds
+        environment: [test, test-lowest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: prefix-dev/setup-pixi@v0.11.2
+        with:
+          cache: true
+          environments: ${{ matrix.environment }}
+
+      - name: Run tests with coverage report
+        run: pixi run -e ${{ matrix.environment }} test
