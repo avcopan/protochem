@@ -87,4 +87,21 @@ mod _core {
             .map(|&valence| u32::from(valence))
             .collect()
     }
+
+    /// Return the number of implicit hydrogens on an organic-subset atom without brackets.
+    ///
+    /// Uses the SMILES rule: the smallest allowed valence that is at least the bond order
+    /// sum, minus the bond order sum (or 0 if no valence is large enough).
+    ///
+    /// Args:
+    ///     atomic_number: The atomic number.
+    ///     bond_order_sum: The sum of the orders of the atom's explicit bonds.
+    ///
+    /// Returns:
+    ///     The implicit hydrogen count, or None if the element is not in the organic
+    ///     subset.
+    #[pyfunction]
+    fn implicit_hydrogens(atomic_number: u8, bond_order_sum: u8) -> Option<u8> {
+        element::implicit_hydrogens(atomic_number, bond_order_sum)
+    }
 }

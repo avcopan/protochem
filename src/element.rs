@@ -110,6 +110,50 @@ pub fn organic_valences(atomic_number: u8) -> &'static [u8] {
     }
 }
 
+/// Return whether an element is in the SMILES "organic subset" (see [`organic_valences`]).
+///
+/// # Examples
+///
+/// ```
+/// use protochem::element;
+///
+/// assert!(element::is_organic(6));
+/// assert!(!element::is_organic(26));
+/// ```
+#[must_use]
+pub fn is_organic(atomic_number: u8) -> bool {
+    !organic_valences(atomic_number).is_empty()
+}
+
+/// Return the number of implicit hydrogens on an organic-subset atom written without
+/// brackets.
+///
+/// `bond_order_sum` is the sum of the orders of the atom's explicit bonds (its explicit
+/// valence). The SMILES rule takes the smallest allowed valence (see
+/// [`organic_valences`]) that is at least `bond_order_sum` and fills the difference
+/// with hydrogens. If no valence is large enough, the atom gets no hydrogens.
+///
+/// Returns `None` if the element is not in the organic subset, since bracket atoms
+/// never get implicit hydrogens: they say how many they have, as in `[CH4]`.
+///
+/// # Examples
+///
+/// ```
+/// use protochem::element;
+///
+/// assert_eq!(element::implicit_hydrogens(6, 1), Some(3)); // C in CC: valence 4
+/// assert_eq!(element::implicit_hydrogens(7, 4), Some(1)); // N: valence 5
+/// assert_eq!(element::implicit_hydrogens(9, 2), Some(0)); // F: hypervalent
+/// assert_eq!(element::implicit_hydrogens(26, 0), None); // Fe must be written [Fe]
+/// ```
+#[must_use]
+pub fn implicit_hydrogens(atomic_number: u8, bond_order_sum: u8) -> Option<u8> {
+    let valences = organic_valences(atomic_number);
+    let [_, ..] = valences else { return None };
+    let valence = valences.iter().copied().find(|&v| v >= bond_order_sum);
+    Some(valence.map_or(0, |v| v - bond_order_sum))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -159,5 +203,35 @@ mod tests {
         assert_eq!(organic_valences(1), NOT_ORGANIC); // H must be written [H]
         assert_eq!(organic_valences(26), NOT_ORGANIC); // Fe
         assert_eq!(organic_valences(0), NOT_ORGANIC);
+    }
+
+    #[test]
+    fn organic_subset() {
+        let organic: Vec<u8> = (1..=18).filter(|&z| is_organic(z)).collect();
+        // B, C, N, O, F, P, S, Cl
+        assert_eq!(organic, vec![5, 6, 7, 8, 9, 15, 16, 17]);
+        assert!(is_organic(35));
+        assert!(is_organic(53));
+        assert!(!is_organic(1));
+        assert!(!is_organic(26));
+    }
+
+    #[test]
+    fn implicit_hydrogens_rule() {
+        assert_eq!(implicit_hydrogens(6, 1), Some(3)); // C
+        assert_eq!(implicit_hydrogens(7, 4), Some(1)); // N: 3 < 4 <= 5
+        assert_eq!(implicit_hydrogens(16, 3), Some(1)); // S: 2 < 3 <= 4
+        assert_eq!(implicit_hydrogens(16, 6), Some(0)); // S: exactly the top valence
+        assert_eq!(implicit_hydrogens(9, 2), Some(0)); // F: hypervalent
+        assert_eq!(implicit_hydrogens(26, 0), None); // Fe
+        assert_eq!(implicit_hydrogens(0, 0), None);
+    }
+
+    #[test]
+    fn implicit_hydrogens_unbonded_fill_lowest_valence() {
+        for atomic_number in 1..=118 {
+            let expected = organic_valences(atomic_number).first().copied();
+            assert_eq!(implicit_hydrogens(atomic_number, 0), expected);
+        }
     }
 }

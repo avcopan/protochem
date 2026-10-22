@@ -36,3 +36,10 @@ def test__organic_valences() -> None:
     """Test the SMILES organic-subset valences."""
     assert protochem.organic_valences(7) == [3, 5]  # a list, not bytes
     assert protochem.organic_valences(26) == []
+
+
+def test__implicit_hydrogens() -> None:
+    """Test the SMILES implicit-hydrogen rule."""
+    assert protochem.implicit_hydrogens(6, 1) == 3
+    assert protochem.implicit_hydrogens(9, 2) == 0  # hypervalent
+    assert protochem.implicit_hydrogens(26, 0) is None  # Option -> None

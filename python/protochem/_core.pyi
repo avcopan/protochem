@@ -55,6 +55,22 @@ class Element:
         The chemical symbol.
         """
 
+def implicit_hydrogens(atomic_number: int, bond_order_sum: int) -> int | None:
+    """
+    Return the number of implicit hydrogens on an organic-subset atom without brackets.
+
+    Uses the SMILES rule: the smallest allowed valence that is at least the bond order
+    sum, minus the bond order sum (or 0 if no valence is large enough).
+
+    Args:
+        atomic_number: The atomic number.
+        bond_order_sum: The sum of the orders of the atom's explicit bonds.
+
+    Returns:
+        The implicit hydrogen count, or None if the element is not in the organic
+        subset.
+    """
+
 def organic_valences(atomic_number: int) -> list[int]:
     """
     Return the allowed valences of an element in the SMILES organic subset.

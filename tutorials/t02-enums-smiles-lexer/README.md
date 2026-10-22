@@ -1,6 +1,6 @@
 # T02: Enums, Structs and Errors: a SMILES Lexer
 
-**Time:** ~3 h · **Builds:** `src/smiles_lexer.rs` · **Needs:** T01's `element.rs`
+**Time:** ~2 h · **Builds:** `src/smiles_lexer.rs` · **Needs:** T01's `element.rs`
 
 ## Why this matters
 
@@ -10,13 +10,14 @@ VF2++, and errors everywhere. A lexer is the perfect place to practice them: eve
 token is a variant, and lexing is a big `match`. It's also the first stage of the
 SMILES reader.
 
-## Reading (≈ 45 min)
+## Reading (≈ 30 min)
 
-- Rust book **5** (structs, methods, `impl`). Skim if familiar.
-- Rust book **6.1** (enums with data) and re-skim **6.2–6.3**.
-- Rust book **9.2** "Recoverable Errors with `Result`" (the `?` operator).
-- Rust book **19.3** "Pattern Syntax": ranges `'0'..='9'`, bindings `c @ 'a'..='z'`,
-  guards `c if c.is_ascii_uppercase()`, struct and slice patterns.
+- Rust book **6.1** (enums with data) and **9.2** "Recoverable Errors with
+  `Result`" (the `?` operator). Skip chapter 5 (structs): you'll pick it up from
+  the stub's `Scanner`.
+- Rust book **19.3** "Pattern Syntax", as a reference to skim: ranges `'0'..='9'`,
+  bindings `c @ 'a'..='z'`, guards `c if c.is_ascii_uppercase()`, struct and slice
+  patterns.
 - Look at how `purr` does it: `resources - rust-graph-and-cheminformatics-info/purr/src/read/scanner.rs`
   (the `Scanner`), `read_organic.rs`, and `read_bracket.rs`. Read for ideas, but
   write your own.
@@ -30,10 +31,15 @@ SMILES reader.
   could be `Copy` too. Should it be?).
 - **Struct update syntax** in the tests: `BracketAtom { charge: -1, ..bracket(8) }`.
 - **Slice patterns** in `bracket_charges`: `match &tokens[..] { [Token::BracketAtom(b)] => ... }`.
+- **Iterators and closures** work like Python's generators and lambdas, and you
+  can use them freely from here on (T06 is folded into T04). For small `Copy`
+  items, call `.copied()` right after `.iter()`, as in T01's `implicit_hydrogens`.
+  `Scanner::take_number` shows `while let` with `and_then`.
 - `Option` combinators you'll want: `ok_or`, `map_or`, `and_then`, `filter`.
   Converting `Option` → `Result` with `.ok_or(LexError::UnexpectedEnd)?` is the
   idiom for "running out of input is an error here".
-- Integer conversions: `u8::try_from(x)` vs `x as u8`. Clippy pedantic will flag
+- Integer conversions: `take_number` returns a `u32`, and tokens store `u8`/`u16`.
+  Use `u8::try_from(x)`, not `x as u8`. Clippy pedantic will flag
   lossy `as` casts. Decide where an `unwrap()` is truly impossible to fail and where
   an error is needed.
 
@@ -41,14 +47,13 @@ SMILES reader.
 
 1. Copy `smiles_lexer.rs` to `src/smiles_lexer.rs` and add
    `pub mod smiles_lexer;` to `lib.rs`.
-2. Extend `element::atomic_number` (and `symbol`) to cover Br (35), I (53) and
-   Fe (26). Optionally use a `const` table now that the list is growing. Keep T01's
-   tests passing.
-3. Implement `Scanner` (5 small methods), then `next_token`, then
+2. Read the given `Scanner` (a plain struct with an `impl` block; that's all of
+   Book chapter 5 you need). Then implement `next_token`, then
    `read_bracket_atom`. Test incrementally:
-   `pixi run -e dev cargo test smiles_lexer::tests::scanner_basics`, then
-   `ethanol`, and so on. Leave the bracket tests for last.
-4. Implement `std::fmt::Display` for `LexError` with a helpful message, and
+   `pixi run -e dev cargo test smiles_lexer::tests::ethanol`, and so on. Leave
+   the bracket tests for last. Look up elements with `Element::from_symbol` from
+   T01 (aromatic symbols like `c` need capitalizing first).
+3. Implement `std::fmt::Display` for `LexError` with a helpful message, and
    `impl std::error::Error for LexError {}` (C-GOOD-ERR, below). T04 relies on
    this pattern.
 
@@ -93,8 +98,9 @@ by code. The ones this tutorial touches:
   at the use site. As a function *argument* (`atom(6, true)`) it wouldn't be.
 - **C-HIDDEN**: is `Scanner` part of the public API, or an implementation detail
   that should be `pub(crate)`? Decide, and say why in the review.
-- **Book 7.4 `use` paths**: the stub's `use crate::element;` followed by
-  `element::atomic_number(...)` is the idiomatic form for functions.
+- **Book 7.4 `use` paths**: types are imported directly (`use crate::Element;`,
+  then `Element::from_symbol(...)`), while functions are called through their
+  module (`element::is_organic(...)`).
 
 ## Done?
 

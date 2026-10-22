@@ -1,6 +1,7 @@
 //! A lexer (tokenizer) for a subset of SMILES.
 //!
 //! Tutorial 02 exercise. Replace every `todo!()` so that `cargo test` passes.
+//! `Scanner` is given; the exercise is `next_token` and `read_bracket_atom`.
 //!
 //! A lexer turns a string into a flat list of tokens. It does not check that the
 //! tokens make sense together (that is the parser's job, in tutorial 05). For
@@ -20,17 +21,13 @@
 //! | `.`                    | `Dot`                                   |
 //!
 //! Inside brackets we support: an optional isotope, a symbol (any capitalized
-//! symbol known to `element::atomic_number`, or one of the aromatic `b c n o p s`),
+//! symbol known to `Element::from_symbol`, or one of the aromatic `b c n o p s`),
 //! an optional chirality `@` or `@@`, an optional hydrogen count `H` or `Hn`,
 //! an optional charge (`+`, `-`, `+n`, `-n`, and the old forms `++` and `--`),
 //! and an optional atom class `:n`. Examples: `[NH4+]`, `[13CH3]`, `[C@@H]`,
 //! `[O-]`, `[nH]`, `[Fe+2]`, `[CH3:7]`.
-//!
-//! Note: `element.rs` from tutorial 01 only knows elements 1..=18, plus `Br`/`I`
-//! in the organic subset. Extend `atomic_number` with Br (35) and I (53) and, if you
-//! like, a few metals (e.g. Fe = 26) so that the tests below pass.
 
-use crate::element;
+use crate::Element;
 
 /// The kind of an explicit bond symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -128,36 +125,48 @@ impl Scanner {
     /// Create a scanner positioned at the start of `input`.
     #[must_use]
     pub fn new(input: &str) -> Self {
-        todo!()
+        Self { characters: input.chars().collect(), cursor: 0 }
     }
 
     /// The position of the next character.
     #[must_use]
     pub fn cursor(&self) -> usize {
-        todo!()
+        self.cursor
     }
 
     /// The next character, without consuming it.
     #[must_use]
     pub fn peek(&self) -> Option<char> {
-        todo!()
+        self.characters.get(self.cursor).copied()
     }
 
     /// Consume and return the next character.
     pub fn pop(&mut self) -> Option<char> {
-        todo!()
+        let character = self.peek()?;
+        self.cursor += 1;
+        Some(character)
     }
 
     /// Consume the next character only if it equals `expected`, and report whether
     /// it did. This makes optional syntax like the second `@` in `@@` easy.
     pub fn take(&mut self, expected: char) -> bool {
-        todo!()
+        let matches = self.peek() == Some(expected);
+        if matches {
+            self.cursor += 1;
+        }
+        matches
     }
 
     /// Consume a run of ASCII digits and return their value, or `None` if the next
-    /// character is not a digit. (Hint: `char::to_digit(10)`.)
-    pub fn take_number(&mut self) -> Option<u16> {
-        todo!()
+    /// character is not a digit. Very long runs saturate at `u32::MAX`; callers
+    /// convert to their own integer type with `try_from`.
+    pub fn take_number(&mut self) -> Option<u32> {
+        let mut number = None;
+        while let Some(digit) = self.peek().and_then(|c| c.to_digit(10)) {
+            self.cursor += 1;
+            number = Some(number.unwrap_or(0_u32).saturating_mul(10).saturating_add(digit));
+        }
+        number
     }
 }
 
