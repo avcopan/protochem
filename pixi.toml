@@ -89,6 +89,10 @@ great-docs = ">=0.17.0"
 # Keep dev-environment Cargo builds separate from Pixi package builds, which use a
 # different Rust toolchain and would otherwise keep invalidating each other's cache
 CARGO_TARGET_DIR = "$PIXI_PROJECT_ROOT/target/dev"
+# Build PyO3 as for an extension module, which leaves Python's symbols to the interpreter
+# instead of linking libpython (the Pixi Python ships without it), so that Cargo builds
+# with the `python` feature (`--all-features`, as rust-analyzer's Run buttons use) link
+PYO3_BUILD_EXTENSION_MODULE = "1"
 
 [feature.dev.tasks]
 # Manage pyproject.toml with uv
