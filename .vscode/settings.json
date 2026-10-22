@@ -1,0 +1,23 @@
+{
+  // Rust: format with rustfmt on save, and check with Clippy (including the pedantic
+  // lints from Cargo.toml) instead of `cargo check`, as `pixi run lint` does
+  "[rust]": {
+    "editor.defaultFormatter": "rust-lang.rust-analyzer",
+    "editor.formatOnSave": true
+  },
+  "rust-analyzer.check.command": "clippy",
+  // Enable the `python` feature, so that rust-analyzer also analyzes src/python.rs
+  "rust-analyzer.cargo.features": "all",
+
+  // Python: format with Ruff on save, using the Ruff from the Pixi environment
+  "[python]": {
+    "editor.defaultFormatter": "charliermarsh.ruff",
+    "editor.formatOnSave": true
+  },
+  "ruff.importStrategy": "fromEnvironment",
+  // Use ty instead of Pylance for type checking and code navigation
+  "python.languageServer": "None",
+  // Run the tests from the Testing view in the test environment, as `pixi run test` does
+  "python.defaultInterpreterPath": "${workspaceFolder}/.pixi/envs/test/bin/python",
+  "python.testing.pytestEnabled": true
+}
