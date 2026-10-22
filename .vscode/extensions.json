@@ -1,0 +1,6 @@
+{
+  // rust-analyzer only sees the Pixi environment (cargo, rustc, the linker) if VS Code
+  // loads it, which the direnv extension does from .envrc (see the README).
+  // Tombi validates Cargo.toml, pyproject.toml, and pixi.toml against their schemas.
+  "recommendations": ["rust-lang.rust-analyzer", "mkhl.direnv", "tombi-toml.tombi"]
+}

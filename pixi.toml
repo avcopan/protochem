@@ -47,6 +47,8 @@ tzdata = ">=2026c"
 [feature.dev.dependencies]
 # Rust toolchain
 rust = "*"
+# Standard library source, which rust-analyzer needs to resolve `std`
+rust-src = "*"
 # Type stub generation
 maturin = ">=1.15"
 # Dependency management
