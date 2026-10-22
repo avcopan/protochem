@@ -109,3 +109,55 @@ pub fn organic_valences(atomic_number: u8) -> &'static [u8] {
         _ => &[],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn table_is_ordered_by_atomic_number() {
+        for (index, element) in ELEMENTS.iter().enumerate() {
+            assert_eq!(usize::from(element.atomic_number), index + 1);
+        }
+    }
+
+    #[test]
+    fn lookups_round_trip() {
+        for atomic_number in 1..=118 {
+            let element = Element::from_atomic_number(atomic_number).expect("z is in 1..=118");
+            assert_eq!(Element::from_symbol(element.symbol), Some(element));
+        }
+    }
+
+    #[test]
+    fn from_atomic_number_out_of_range() {
+        assert_eq!(Element::from_atomic_number(0), None);
+        assert_eq!(Element::from_atomic_number(119), None);
+        assert_eq!(Element::from_atomic_number(255), None);
+    }
+
+    #[test]
+    fn from_symbol_is_case_sensitive() {
+        assert_eq!(
+            Element::from_symbol("Cl").map(|e| e.atomic_number),
+            Some(17)
+        );
+        assert_eq!(Element::from_symbol("CL"), None);
+        assert_eq!(Element::from_symbol("cl"), None);
+        assert_eq!(Element::from_symbol(""), None);
+    }
+
+    #[test]
+    fn organic_valences_table() {
+        const NOT_ORGANIC: &[u8] = &[];
+        assert_eq!(organic_valences(5), &[3]); // B
+        assert_eq!(organic_valences(6), &[4]); // C
+        assert_eq!(organic_valences(7), &[3, 5]); // N
+        assert_eq!(organic_valences(16), &[2, 4, 6]); // S
+        assert_eq!(organic_valences(35), &[1]); // Br
+        assert_eq!(organic_valences(53), &[1]); // I
+        assert_eq!(organic_valences(1), NOT_ORGANIC); // H must be written [H]
+        assert_eq!(organic_valences(26), NOT_ORGANIC); // Fe
+        assert_eq!(organic_valences(0), NOT_ORGANIC);
+    }
+}

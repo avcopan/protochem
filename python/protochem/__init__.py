@@ -1,5 +1,5 @@
 """protochem."""
 
-from ._core import __version__
+from ._core import Element, __version__, organic_valences
 
-__all__ = ["__version__"]
+__all__ = ["Element", "__version__", "organic_valences"]
