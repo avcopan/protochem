@@ -2,7 +2,6 @@
 // parameters without backticks
 #![allow(clippy::doc_markdown)]
 
-// The PyO3 prelude brings the `pymodule` attribute macro into scope.
 use pyo3::prelude::*;
 
 /// The compiled Python module, imported as `<package_name>._core`.

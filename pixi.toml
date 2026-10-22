@@ -30,11 +30,21 @@ ignore-pypi-mapping = false
 [package.build.config.pypi-conda-map]
 # Add name mappings for packages not on conda-forge
 
+[environments]
+default = { solve-group = "default" }
+test = { features = ["test"], solve-group = "default"}
+dev = { features = ["dev", "test"], solve-group = "default"}
+# Test with the lowest versions allowed by the lower bounds on the dependencies
+test-lowest = { features = ["test", "lowest"] }
+
 [feature.test.dependencies]
 pytest = ">=9.1.1"
 pytest-cov = ">=7.1.0"
 
-# Solve to the lowest versions allowed by the dependency specs (see test-lowest below)
+[feature.test.tasks]
+test = { cmd = "pytest", default-environment = "test" }
+
+# Solve to the lowest versions allowed by the dependency specs (see test-lowest above)
 [feature.lowest]
 solve-strategy = "lowest"
 
@@ -79,16 +89,6 @@ great-docs = ">=0.17.0"
 # Keep dev-environment Cargo builds separate from Pixi package builds, which use a
 # different Rust toolchain and would otherwise keep invalidating each other's cache
 CARGO_TARGET_DIR = "$PIXI_PROJECT_ROOT/target/dev"
-
-[environments]
-default = { solve-group = "default" }
-test = { features = ["test"], solve-group = "default"}
-dev = { features = ["dev", "test"], solve-group = "default"}
-# Test with the lowest versions allowed by the lower bounds on the dependencies
-test-lowest = { features = ["test", "lowest"] }
-
-[feature.test.tasks]
-test = { cmd = "pytest", default-environment = "test" }
 
 [feature.dev.tasks]
 # Manage pyproject.toml with uv
