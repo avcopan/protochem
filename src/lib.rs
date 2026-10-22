@@ -1,13 +1,15 @@
-#![doc = include_str!("../CRATE.md")] // the crate docs are the crates.io page
-// lib.rs is the root of this library crate
+// lib.rs is the root of this library crate.
+// The crate docs are included from CRATE.md, which is also the crates.io page.
+#![doc = include_str!("../CRATE.md")]
 
-mod greet; // `mod greet` tells the compiler to look for a
-// src/greet.rs or src/greet/mod.rs with the module code
-// (or inline mod greet { ... } in this file)
+// Declare the `greet` module, whose code the compiler looks for in src/greet.rs or
+// src/greet/mod.rs (or inline, as `mod greet { ... }` in this file).
+mod greet;
 
-pub use greet::greet; // `greet::greet` is the path to the greet function
-// `use` pulls this function into scope and `pub` makes it public
+// Re-export the greet function (path `greet::greet`, i.e. module::function): `use`
+// brings it into scope and `pub` makes it public.
+pub use greet::greet;
 
-// Python bindings (only compiled when the `python` feature is enabled)
+// The Python bindings are only compiled when the `python` feature is enabled.
 #[cfg(feature = "python")]
 mod python;

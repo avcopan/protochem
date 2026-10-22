@@ -1,3 +1,4 @@
+// The PyO3 prelude brings the `pymodule` attribute macro into scope.
 use pyo3::prelude::*;
 
 /// The compiled Python module, imported as `<package_name>._core`.
@@ -6,6 +7,7 @@ use pyo3::prelude::*;
 /// includes these doc comments as docstrings, so they use Python's (Google) docstring style.
 #[pymodule]
 mod _core {
+    // Import the prelude again, since `use` does not carry into child modules.
     use pyo3::prelude::*;
 
     /// The package version.
