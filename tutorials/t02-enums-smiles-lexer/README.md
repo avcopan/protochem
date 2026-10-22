@@ -48,6 +48,9 @@ SMILES reader.
    `read_bracket_atom`. Test incrementally:
    `pixi run -e dev cargo test smiles_lexer::tests::scanner_basics`, then
    `ethanol`, and so on. Leave the bracket tests for last.
+4. Implement `std::fmt::Display` for `LexError` with a helpful message, and
+   `impl std::error::Error for LexError {}` (C-GOOD-ERR, below). T04 relies on
+   this pattern.
 
 Suggested order inside `read_bracket_atom` (OpenSMILES bracket atom grammar):
 `isotope? symbol chiral? hcount? charge? class? ']'`. Each optional piece is
@@ -62,11 +65,39 @@ and any isotope).
 - Make `lex` return an iterator instead of a `Vec` (preview of T06):
   `pub fn tokens(smiles: &str) -> impl Iterator<Item = Result<Token, LexError>>`.
   Hint: `std::iter::from_fn`.
-- Implement `std::fmt::Display` for `LexError` with a helpful message, and
-  `impl std::error::Error for LexError {}`. T04 relies on this pattern.
+
+## API guidelines in this tutorial
+
+Reviews cite the [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html)
+by code. The ones this tutorial touches:
+
+- **C-COMMON-TRAITS**: public types derive every common trait that applies
+  (`Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default`). For each
+  type in the stub, ask why a trait is *missing*: should `BondKind` be `Hash`?
+  Does `Token` have a meaningful order?
+- **C-GOOD-ERR**: error types implement `std::error::Error` (via `Display` +
+  `Debug`). `Display` messages are lowercase with no trailing period, e.g.
+  `"unexpected character 'X' at position 1"`. The error carries what the caller
+  needs to act on it, which here is the position.
+- **C-FAILURE**: `lex` documents its `# Errors`. Clippy pedantic
+  (`missing_errors_doc`) checks that the section exists, and review checks that
+  it's accurate.
+- **C-QUESTION-MARK**: if you add a doc example to `lex`, use `?` with a hidden
+  `# fn main() -> Result<(), protochem::smiles_lexer::LexError> {`, not
+  `unwrap()`. Examples get copied verbatim.
+- **C-STRUCT-PRIVATE vs. passive data**: `BracketAtom` has public fields. That's
+  fine for passive data with no invariants (it's a record of what the text said).
+  `Scanner` keeps its fields private because `cursor` must stay within
+  `characters`.
+- **C-CUSTOM-TYPE**: `aromatic: bool` is fine as a *field*, since the name reads
+  at the use site. As a function *argument* (`atom(6, true)`) it wouldn't be.
+- **C-HIDDEN**: is `Scanner` part of the public API, or an implementation detail
+  that should be `pub(crate)`? Decide, and say why in the review.
+- **Book 7.4 `use` paths**: the stub's `use crate::element;` followed by
+  `element::atomic_number(...)` is the idiomatic form for functions.
 
 ## Done?
 
 Say **"done"**. In the review I'll pay particular attention to how you structured
-the big `match` and the error handling. Tell me how enums, `Result`/`?`, and
+the big `match`, the error handling, and the guidelines above. Tell me how enums, `Result`/`?`, and
 patterns felt.

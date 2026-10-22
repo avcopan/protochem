@@ -22,55 +22,7 @@ template's tooling, and practice `match`, which is where you stopped in the book
 - Optional refresher: Comprehensive Rust `pattern-matching/` (match guards,
   destructuring), and Rust book 3.2 if integer types (`u8`, `i8`, `usize`) feel rusty.
 
-## Part 1: Name and create the sandbox
-
-### Choose a name
-
-The sandbox is a learning repo, separate from the real StereoMolGraph port (whose
-name we'll pick at the start of stage 2). The package name must be a lowercase
-Python identifier. Some options:
-
-| name | note |
-|---|---|
-| **`protochem`** | what we went with: a prototype, clearly not the real package |
-| `protochem` | Rust = iron oxide, "ferro" + chem |
-| `smg_sandbox` | says exactly what it is |
-| `rusty_rings` | a nod to ring closures in SMILES |
-
-### Create it
-
-From `~/code/sm/` (so it sits next to the other repos):
-
-```sh
-copier copy ~/code/sm/copier-pixi-rust protochem   # or gh:avcopan/copier-pixi-rust
-```
-
-Answers:
-- `package_name`: your chosen name
-- `description`: e.g. "Rust learning sandbox for StereoMolGraph"
-- `github_org_name`: `avcopan`
-- `prefix_channel`: anything (we won't publish), e.g. `avcopan`
-- `polars_plugin`: **no** (keep the sandbox lean)
-
-Skip the whole "Prepare Remote GitHub Repository" / publication section of the
-template README. A GitHub remote is optional; pushing to a private repo is nice
-for backup. Then:
-
-```sh
-cd protochem
-pixi run init
-```
-
-Then move the tutorials into the sandbox:
-
-```sh
-mv ../tutorials ./tutorials
-git add tutorials && git commit -m "Add initial tutorials"
-```
-
-(`PLAN.md` and `TODO.md` stay in `~/code/sm/`, outside the repo.)
-
-### Tour the tooling (≈ 15 min)
+## Part 1: Tour the tooling (≈ 15 min)
 
 Run each of these once and look at what it does:
 
@@ -118,9 +70,10 @@ The doc comments explain each function. Hints:
   ```
 
   then loop to find the first valence `>= bond_order_sum`.
-- Replace the `ignore` in the `symbol` doc example with a working doc test
-  (doc tests are written from the crate user's point of view:
-  `use protochem::element::symbol;`).
+- Replace the `ignore` in the `symbol` doc example with a working doc test.
+  Doc tests are written from the crate user's point of view, and the idiomatic
+  `use` for a *function* imports its parent module (Book 7.4): `use protochem::element;`,
+  then `element::symbol(6)`.
 
 ## Part 3: Expose one function to Python
 
@@ -143,7 +96,30 @@ Write one more test of your own in `element.rs`: for example, check that
 `implicit_hydrogens(z, 0)` equals the first organic valence for every organic
 element. Then run `pixi run lint` and fix whatever clippy says.
 
+## API guidelines in this tutorial
+
+From here on, code is reviewed against the
+[Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html)
+(local copy: `~/code/sm/resources - rust/api-guidelines/src/`). Reviews cite them
+by code. The ones this tutorial touches:
+
+- **C-CASE**: `snake_case` functions, `UpperCamelCase` types. Nothing to decide
+  here, but it's the baseline.
+- **C-GETTER**: `symbol(z)`, not `get_symbol(z)`. Rust drops the `get_` prefix.
+- **C-EXAMPLE**: every public item gets a doc example that shows *why* you'd use
+  it. The `symbol` doctest is your first one. Once the template's new lints reach
+  `protochem`, `missing_docs` enforces the doc comment, though not the example.
+- **C-NEWTYPE** (a look ahead): `atomic_number: u8` is a deliberate simplification.
+  A bare `u8` could just as well be a charge or a hydrogen count, and the compiler
+  can't tell them apart. A wrapper type (a newtype) makes that mistake impossible.
+  T04 introduces newtypes for atom and bond indices, and an `Element` type is a
+  likely candidate in stage 2. For now, notice the places where a `u8` could be
+  mixed up.
+- **Book 7.4 `use` paths**: functions are imported by their parent module
+  (`element::symbol`), types by their full path (`use std::collections::HashMap;`).
+
 ## Done?
 
-Say **"done"**. I'll review `src/element.rs`, `src/python.rs` and the tests. Tell
+Say **"done"**. I'll review `src/element.rs`, `src/python.rs` and the tests
+against the guidelines above. Tell
 me how `match`, `Option` and the module system felt (comfortable / need more).

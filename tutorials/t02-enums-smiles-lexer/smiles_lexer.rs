@@ -35,13 +35,20 @@ use crate::element;
 /// The kind of an explicit bond symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BondKind {
-    Single,   // -
-    Double,   // =
-    Triple,   // #
-    Quadruple, // $
-    Aromatic, // :
-    Up,       // /
-    Down,     // \
+    /// `-`
+    Single,
+    /// `=`
+    Double,
+    /// `#`
+    Triple,
+    /// `$`
+    Quadruple,
+    /// `:`
+    Aromatic,
+    /// `/` (cis/trans marker)
+    Up,
+    /// `\` (cis/trans marker)
+    Down,
 }
 
 /// Tetrahedral chirality marker inside brackets.
@@ -56,24 +63,39 @@ pub enum Chirality {
 /// The contents of a bracket atom like `[13CH3+:2]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BracketAtom {
+    /// The mass number, e.g. `13` in `[13C]`.
     pub isotope: Option<u16>,
+    /// The atomic number.
     pub element: u8,
+    /// Whether the symbol was lowercase, e.g. `[nH]`.
     pub aromatic: bool,
+    /// The chirality marker, `@` or `@@`.
     pub chirality: Option<Chirality>,
+    /// The hydrogen count (`H` is 1, `H3` is 3, no `H` is 0).
     pub hydrogens: u8,
+    /// The formal charge.
     pub charge: i8,
+    /// The atom class, e.g. `7` in `[CH3:7]`.
     pub class: Option<u16>,
 }
 
 /// One SMILES token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
+    /// An organic-subset atom without brackets, e.g. `C` or `c`.
+    #[allow(missing_docs)] // the field names say it all
     Atom { element: u8, aromatic: bool },
+    /// A bracket atom, e.g. `[NH4+]`.
     BracketAtom(BracketAtom),
+    /// An explicit bond symbol.
     Bond(BondKind),
+    /// `(`
     BranchOpen,
+    /// `)`
     BranchClose,
+    /// A ring-closure digit, `1` or `%12`.
     RingClosure(u8),
+    /// `.`, separating disconnected parts.
     Dot,
 }
 
@@ -81,10 +103,12 @@ pub enum Token {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LexError {
     /// A character that cannot start any token, e.g. `X` or `!`.
+    #[allow(missing_docs)] // the field names say it all
     UnexpectedCharacter { position: usize, character: char },
     /// The input ended in the middle of a token, e.g. `[CH4` or `%1`.
     UnexpectedEnd,
     /// A bracket atom whose symbol is not a known element, e.g. `[Xx]`.
+    #[allow(missing_docs)] // the field names say it all
     UnknownElement { position: usize },
 }
 
@@ -94,12 +118,14 @@ pub enum LexError {
 /// `resources - rust-graph-and-cheminformatics-info/purr/src/read/scanner.rs`).
 /// Working with a `Vec<char>` is simpler than with UTF-8 byte offsets; tutorial 03
 /// redoes this with byte slices.
+#[derive(Debug, Clone)]
 pub struct Scanner {
     characters: Vec<char>,
     cursor: usize,
 }
 
 impl Scanner {
+    /// Create a scanner positioned at the start of `input`.
     #[must_use]
     pub fn new(input: &str) -> Self {
         todo!()
