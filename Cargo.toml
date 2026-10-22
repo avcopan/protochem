@@ -6,6 +6,8 @@ description = "Rust learning sandbox for implementing cheminformatics algorithms
 license = "MIT"
 repository = "https://github.com/avcopan/protochem"
 homepage = "https://avcopan.github.io/protochem/"
+keywords = ["chemistry", "graph", "stereochemistry", "cheminformatics"]
+categories = ["science::computational-chemistry::cheminformatics"]
 readme = "CRATE.md"  # the crates.io page, also the crate docs (see src/lib.rs)
 # Files to include when publishing to crates.io (the Python package is not needed there)
 include = ["/src", "/Cargo.toml", "/Cargo.lock", "/CRATE.md", "/LICENSE"]
@@ -25,9 +27,14 @@ python = ["dep:pyo3"]
 # PyO3's experimental-inspect feature lets maturin generate the type stubs (see pixi.toml).
 pyo3 = { version = "0.29", features = ["abi3-py313", "experimental-inspect"], optional = true }
 
-# Clippy configurations
+# Compiler and Clippy lints (see the Rust API Guidelines, https://rust-lang.github.io/api-guidelines/)
+[lints.rust]
+missing_docs = "warn"  # C-CRATE-DOC, C-EXAMPLE
+missing_debug_implementations = "warn"  # C-DEBUG
+
 [lints.clippy]
 pedantic = { level = "warn", priority = -1 }
+cargo_common_metadata = "warn"  # C-METADATA
 
 # Optimizations for release builds
 [profile.release]
