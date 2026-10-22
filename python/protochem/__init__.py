@@ -1,5 +1,5 @@
 """protochem."""
 
-from ._core import __version__, greet
+from ._core import __version__
 
-__all__ = ["__version__", "greet"]
+__all__ = ["__version__"]

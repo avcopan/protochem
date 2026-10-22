@@ -11,14 +11,3 @@ __version__: Final[str]
 """
 The package version.
 """
-
-def greet(name: str) -> str:
-    """
-    Greet a person by their name.
-
-    Args:
-        name: The name of the person to greet.
-
-    Returns:
-        A greeting message.
-    """
