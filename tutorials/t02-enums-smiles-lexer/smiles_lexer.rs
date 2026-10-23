@@ -1,7 +1,7 @@
 //! A lexer (tokenizer) for a subset of SMILES.
 //!
-//! Tutorial 02 exercise. Replace every `todo!()` so that `cargo test` passes.
-//! `Scanner` is given; the exercise is `next_token` and `read_bracket_atom`.
+//! Tutorial 02 spec: Claude's reference for types, docs and tests when filling in
+//! after the step-by-step build in `README.md`. Not meant to be copied.
 //!
 //! A lexer turns a string into a flat list of tokens. It does not check that the
 //! tokens make sense together (that is the parser's job, in tutorial 05). For
