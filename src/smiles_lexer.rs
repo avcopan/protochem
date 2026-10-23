@@ -1,50 +1,106 @@
-//! A lexer for a subset of SMILES
+//! A lexer for a subset of SMILES.
+//!
+//! [`lex`] turns a SMILES string into a flat list of [`Token`]s. It doesn't check
+//! that the tokens make sense together; that's the parser's job. For example,
+//! `"C)("` lexes fine but won't parse.
+//!
+//! | SMILES text             | token                                         |
+//! |-------------------------|-----------------------------------------------|
+//! | `B C N O P S F Cl Br I` | `Atom { atomic_number, aromatic: false }`     |
+//! | `b c n o p s`           | `Atom { atomic_number, aromatic: true }`      |
+//! | `[...]`                 | `BracketAtom(BracketAtom { .. })`             |
+//! | `- = # $ :`             | `Bond(BondKind::...)`                         |
+//! | `/ \`                   | `Bond(BondKind::Up)` / `Bond(BondKind::Down)` |
+//! | `(` `)`                 | `BranchOpen` / `BranchClose`                  |
+//! | `0`-`9`, `%nn`          | `RingClosure(n)`                              |
+//! | `.`                     | `Dot`                                         |
+//!
+//! A bracket atom is `[isotope? symbol chirality? hcount? charge? class?]`, e.g.
+//! `[13CH3]`, `[C@@H]`, `[NH4+]`, `[Fe+2]` or `[CH3:7]`. Two-letter aromatic
+//! symbols like `[se]` are not supported.
 use crate::Element;
 
+/// The kind of an explicit bond symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BondKind {
+    /// `-`
     Single,
+    /// `=`
     Double,
+    /// `#`
     Triple,
+    /// `$`
     Quadruple,
+    /// `:`
     Aromatic,
+    /// `/`, a cis/trans marker.
     Up,
+    /// `\`, a cis/trans marker.
     Down,
 }
 
+/// A tetrahedral chirality marker inside brackets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Chirality {
+    /// `@`: looking from the first neighbor, the rest are counterclockwise.
     CounterClockwise,
+    /// `@@`: looking from the first neighbor, the rest are clockwise.
     Clockwise,
 }
 
+/// The contents of a bracket atom like `[13CH3+:2]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BracketAtom {
+    /// The mass number, e.g. `13` in `[13C]`.
     pub isotope: Option<u16>,
+    /// The atomic number.
     pub atomic_number: u8,
+    /// Whether the symbol was lowercase, e.g. `[nH]`.
     pub aromatic: bool,
+    /// The chirality marker, `@` or `@@`.
     pub chirality: Option<Chirality>,
+    /// The hydrogen count (`H` is 1, `H3` is 3, no `H` is 0).
     pub hydrogens: u8,
+    /// The formal charge.
     pub charge: i8,
+    /// The atom class, e.g. `7` in `[CH3:7]`.
     pub class: Option<u16>,
 }
 
+/// One SMILES token.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Token {
+    /// An organic-subset atom without brackets, e.g. `C` or `c`.
+    #[allow(missing_docs)] // the field names say it all
     Atom { atomic_number: u8, aromatic: bool },
+    /// A bracket atom, e.g. `[NH4+]`.
     BracketAtom(BracketAtom),
+    /// An explicit bond symbol.
     Bond(BondKind),
+    /// `(`
     BranchOpen,
+    /// `)`
     BranchClose,
+    /// `.`, separating disconnected parts.
     Dot,
+    /// A ring-closure label, `1` or `%12`.
     RingClosure(u8),
 }
 
+/// A lexing error, recording the character position where it happened.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LexError {
+    /// A character that can't appear here, e.g. `X` in `CX`.
+    #[allow(missing_docs)] // the field names say it all
     UnexpectedCharacter { position: usize, character: char },
+    /// The input ended in the middle of a token, e.g. `[CH4` or `C%1`.
+    #[allow(missing_docs)] // the field names say it all
     UnexpectedEnd { position: usize },
+    /// A bracket atom symbol that isn't an element, e.g. `[Xx]`.
+    #[allow(missing_docs)] // the field names say it all
     UnknownElement { position: usize, symbol: String },
+    /// A number too large for its field, e.g. `[99999C]`.
+    #[allow(missing_docs)] // the field names say it all
     NumberOutOfRange { position: usize },
 }
 
@@ -56,13 +112,13 @@ impl std::fmt::Display for LexError {
                 character,
             } => write!(
                 f,
-                "unexpected character '{character}' at position {position}"
+                "unexpected character {character:?} at position {position}"
             ),
             Self::UnexpectedEnd { position } => {
                 write!(f, "unexpected end of input at position {position}")
             }
             Self::UnknownElement { position, symbol } => {
-                write!(f, "unknown element '{symbol}' at position {position}")
+                write!(f, "unknown element {symbol:?} at position {position}")
             }
             Self::NumberOutOfRange { position } => {
                 write!(f, "number out of range at position {position}")
@@ -71,12 +127,19 @@ impl std::fmt::Display for LexError {
     }
 }
 
+impl std::error::Error for LexError {}
+
+/// A cursor over the characters of a string.
+///
+/// Its methods know nothing about SMILES; the grammar lives in the `read_*`
+/// functions.
 struct Scanner {
     characters: Vec<char>,
     cursor: usize,
 }
 
 impl Scanner {
+    /// Create a scanner positioned at the start of `input`.
     fn new(input: &str) -> Self {
         Self {
             characters: input.chars().collect(),
@@ -84,20 +147,24 @@ impl Scanner {
         }
     }
 
+    /// The next character, without consuming it.
     fn peek(&self) -> Option<char> {
         self.characters.get(self.cursor).copied()
     }
 
+    /// Consume and return the next character.
     fn pop(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.cursor += 1;
         Some(c)
     }
 
+    /// The position of the next character.
     fn cursor(&self) -> usize {
         self.cursor
     }
 
+    /// Consume the next character only if it is `expected`, and report whether it was.
     fn take(&mut self, expected: char) -> bool {
         let matches = self.peek() == Some(expected);
         if matches {
@@ -106,18 +173,22 @@ impl Scanner {
         matches
     }
 
+    /// Consume the next character only if it is a digit, and return its value.
     fn take_digit(&mut self) -> Option<u8> {
         let d = digit(self.peek()?)?;
         self.cursor += 1;
         Some(d)
     }
 
+    /// Consume the next character only if `predicate` accepts it, and return it.
     fn take_if(&mut self, predicate: impl Fn(char) -> bool) -> Option<char> {
         let c = self.peek().filter(|&c| predicate(c))?;
         self.cursor += 1;
         Some(c)
     }
 
+    /// Consume a run of digits and return its value, saturating at `u32::MAX`, or
+    /// `None` if no digit is next.
     fn take_number(&mut self) -> Option<u32> {
         let mut number = u32::from(self.take_digit()?);
         while let Some(d) = self.take_digit() {
@@ -127,6 +198,7 @@ impl Scanner {
     }
 }
 
+/// The token for an organic-subset symbol, which must be an element.
 fn organic_atom(symbol: &str, aromatic: bool) -> Token {
     let element = Element::from_symbol(symbol).expect("organic subset symbols are elements");
     Token::Atom {
@@ -135,10 +207,12 @@ fn organic_atom(symbol: &str, aromatic: bool) -> Token {
     }
 }
 
+/// The value of a decimal digit, or `None` for any other character.
 fn digit(c: char) -> Option<u8> {
     u8::try_from(c.to_digit(10)?).ok()
 }
 
+/// The error for whatever the scanner is looking at, which the caller didn't expect.
 fn unexpected(scanner: &Scanner) -> LexError {
     match scanner.peek() {
         None => LexError::UnexpectedEnd {
@@ -151,11 +225,12 @@ fn unexpected(scanner: &Scanner) -> LexError {
     }
 }
 
+/// Read one required digit.
 fn read_digit(scanner: &mut Scanner) -> Result<u8, LexError> {
     scanner.take_digit().ok_or_else(|| unexpected(scanner))
 }
 
-// Read an optional number and convert it to `T`, e.g. `u16` for an isotope
+/// Read an optional number and convert it to `T`, e.g. `u16` for an isotope.
 fn read_number<T: TryFrom<u32>>(scanner: &mut Scanner) -> Result<Option<T>, LexError> {
     let position = scanner.cursor();
     scanner
@@ -164,6 +239,7 @@ fn read_number<T: TryFrom<u32>>(scanner: &mut Scanner) -> Result<Option<T>, LexE
         .transpose()
 }
 
+/// Read an optional charge: `+`, `-`, `+n`, `-n`, or a repeated sign like `++`.
 fn read_charge(scanner: &mut Scanner) -> Result<i8, LexError> {
     let position = scanner.cursor();
     let Some(sign_character) = scanner.take_if(|c| c == '+' || c == '-') else {
@@ -183,6 +259,7 @@ fn read_charge(scanner: &mut Scanner) -> Result<i8, LexError> {
     Ok(charge)
 }
 
+/// Read a bracket atom. The opening `[` has already been consumed.
 fn read_bracket_atom(scanner: &mut Scanner) -> Result<BracketAtom, LexError> {
     // 0. read the isotope
     let isotope = read_number(scanner)?;
@@ -244,6 +321,7 @@ fn read_bracket_atom(scanner: &mut Scanner) -> Result<BracketAtom, LexError> {
     })
 }
 
+/// Read one token, or return `Ok(None)` at the end of the input.
 fn next_token(scanner: &mut Scanner) -> Result<Option<Token>, LexError> {
     let Some(c) = scanner.pop() else {
         return Ok(None);
@@ -288,6 +366,26 @@ fn next_token(scanner: &mut Scanner) -> Result<Option<Token>, LexError> {
     Ok(Some(token))
 }
 
+/// Split a SMILES string into tokens.
+///
+/// # Examples
+///
+/// ```
+/// use protochem::smiles_lexer::{self, Token};
+///
+/// # fn main() -> Result<(), smiles_lexer::LexError> {
+/// let tokens = smiles_lexer::lex("C=O")?;
+/// assert_eq!(tokens.len(), 3);
+/// assert_eq!(tokens[0], Token::Atom { atomic_number: 6, aromatic: false });
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Errors
+///
+/// Returns a [`LexError`] for a character that can't appear where it is, input
+/// that ends in the middle of a token, an unknown bracket element, or a number too
+/// large for its field.
 pub fn lex(smiles: &str) -> Result<Vec<Token>, LexError> {
     let mut scanner = Scanner::new(smiles);
     let mut tokens = Vec::new();
@@ -608,5 +706,27 @@ mod tests {
             lex("[C+999]"),
             Err(LexError::NumberOutOfRange { position: 3 })
         );
+    }
+
+    #[test]
+    fn error_messages() {
+        assert_eq!(
+            lex("CX").unwrap_err().to_string(),
+            "unexpected character 'X' at position 1"
+        );
+        assert_eq!(
+            lex("[CH4").unwrap_err().to_string(),
+            "unexpected end of input at position 4"
+        );
+        assert_eq!(
+            lex("[Xx]").unwrap_err().to_string(),
+            "unknown element \"Xx\" at position 1"
+        );
+        assert_eq!(
+            lex("[99999C]").unwrap_err().to_string(),
+            "number out of range at position 1"
+        );
+        // `LexError` works as a standard error
+        let _: Box<dyn std::error::Error> = Box::new(LexError::UnexpectedEnd { position: 0 });
     }
 }
