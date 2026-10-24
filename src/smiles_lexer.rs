@@ -17,11 +17,13 @@
 //!
 //! A bracket atom is `[isotope? symbol chirality? hcount? charge? class?]`, e.g.
 //! `[13CH3]`, `[C@@H]`, `[NH4+]`, `[Fe+2]` or `[CH3:7]`. Two-letter aromatic
-//! symbols like `[se]` are not supported.
+//! symbols like `[se]` are not supported, the hydrogen count is a single digit
+//! (`[CH12]` is an error), and chirality is tetrahedral only (`@TH1` and `@SP1` are
+//! errors).
 use crate::Element;
 
 /// The kind of an explicit bond symbol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BondKind {
     /// `-`
     Single,
@@ -40,7 +42,7 @@ pub enum BondKind {
 }
 
 /// A tetrahedral chirality marker inside brackets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Chirality {
     /// `@`: looking from the first neighbor, the rest are counterclockwise.
     CounterClockwise,
@@ -49,7 +51,7 @@ pub enum Chirality {
 }
 
 /// The contents of a bracket atom like `[13CH3+:2]`.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub struct BracketAtom {
     /// The mass number, e.g. `13` in `[13C]`.
     pub isotope: Option<u16>,
@@ -68,10 +70,10 @@ pub struct BracketAtom {
 }
 
 /// One SMILES token.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Copy)]
 pub enum Token {
     /// An organic-subset atom without brackets, e.g. `C` or `c`.
-    #[allow(missing_docs)] // the field names say it all
+    #[expect(missing_docs)] // the field names say it all
     Atom { atomic_number: u8, aromatic: bool },
     /// A bracket atom, e.g. `[NH4+]`.
     BracketAtom(BracketAtom),
@@ -88,19 +90,20 @@ pub enum Token {
 }
 
 /// A lexing error, recording the character position where it happened.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[non_exhaustive]
 pub enum LexError {
     /// A character that can't appear here, e.g. `X` in `CX`.
-    #[allow(missing_docs)] // the field names say it all
+    #[expect(missing_docs)] // the field names say it all
     UnexpectedCharacter { position: usize, character: char },
     /// The input ended in the middle of a token, e.g. `[CH4` or `C%1`.
-    #[allow(missing_docs)] // the field names say it all
+    #[expect(missing_docs)] // the field names say it all
     UnexpectedEnd { position: usize },
     /// A bracket atom symbol that isn't an element, e.g. `[Xx]`.
-    #[allow(missing_docs)] // the field names say it all
+    #[expect(missing_docs)] // the field names say it all
     UnknownElement { position: usize, symbol: String },
     /// A number too large for its field, e.g. `[99999C]`.
-    #[allow(missing_docs)] // the field names say it all
+    #[expect(missing_docs)] // the field names say it all
     NumberOutOfRange { position: usize },
 }
 
@@ -337,11 +340,12 @@ fn next_token(scanner: &mut Scanner) -> Result<Option<Token>, LexError> {
         '(' => Token::BranchOpen,
         ')' => Token::BranchClose,
         '.' => Token::Dot,
-        // Two-letter organic symbols
-        'C' if scanner.take('l') => organic_atom("Cl", false),
-        'B' if scanner.take('r') => organic_atom("Br", false),
-        // One-letter organic symbols
-        c @ ('B' | 'C' | 'N' | 'O' | 'P' | 'S' | 'F' | 'I') => organic_atom(&c.to_string(), false),
+        // Br and B
+        'B' => organic_atom(if scanner.take('r') { "Br" } else { "B" }, false),
+        // Cl and C
+        'C' => organic_atom(if scanner.take('l') { "Cl" } else { "C" }, false),
+        // N, O, P, S, F, I
+        c @ ('N' | 'O' | 'P' | 'S' | 'F' | 'I') => organic_atom(&c.to_string(), false),
         c @ ('b' | 'c' | 'n' | 'o' | 'p' | 's') => {
             organic_atom(&c.to_ascii_uppercase().to_string(), true)
         }
