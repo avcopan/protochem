@@ -49,8 +49,9 @@ fn symmetrize_by_index(graph: &mut Graph) {
 }
 
 // Puzzle 3, fix 3: take the list out (leaving an empty `Vec`), then put it back.
-// No copy, but node `i` looks neighborless while its list is out: a self-loop
-// `i -> i` would see an empty list and be added twice.
+// No copy, but node `i` looks neighborless while its list is out. A self-loop
+// `i -> i` pushes `i` onto the empty placeholder, which the assignment below
+// discards (restoring with `extend` would keep it, a duplicate).
 fn symmetrize_by_taking(graph: &mut Graph) {
     for i in 0..graph.adjacency.len() {
         let neighbors = std::mem::take(&mut graph.adjacency[i]);

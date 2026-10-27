@@ -272,7 +272,7 @@ fn digit(c: u8) -> Option<u8> {
 }
 
 /// The error for the character at `position`, which the caller didn't expect.
-fn unexpected_at(scanner: &Scanner, position: usize) -> LexError {
+fn unexpected_at(scanner: &Scanner<'_>, position: usize) -> LexError {
     match scanner.char_at(position) {
         None => LexError::UnexpectedEnd { position },
         Some(character) => LexError::UnexpectedCharacter {
@@ -283,17 +283,17 @@ fn unexpected_at(scanner: &Scanner, position: usize) -> LexError {
 }
 
 /// The error for whatever the scanner is looking at, which the caller didn't expect.
-fn unexpected(scanner: &Scanner) -> LexError {
+fn unexpected(scanner: &Scanner<'_>) -> LexError {
     unexpected_at(scanner, scanner.cursor())
 }
 
 /// Read one required digit.
-fn read_digit(scanner: &mut Scanner) -> Result<u8, LexError> {
+fn read_digit(scanner: &mut Scanner<'_>) -> Result<u8, LexError> {
     scanner.take_digit().ok_or_else(|| unexpected(scanner))
 }
 
 /// Read an optional number and convert it to `T`, e.g. `u16` for an isotope.
-fn read_number<T: TryFrom<u32>>(scanner: &mut Scanner) -> Result<Option<T>, LexError> {
+fn read_number<T: TryFrom<u32>>(scanner: &mut Scanner<'_>) -> Result<Option<T>, LexError> {
     let position = scanner.cursor();
     scanner
         .take_number()
@@ -302,7 +302,7 @@ fn read_number<T: TryFrom<u32>>(scanner: &mut Scanner) -> Result<Option<T>, LexE
 }
 
 /// Read an optional charge: `+`, `-`, `+n`, `-n`, or a repeated sign like `++`.
-fn read_charge(scanner: &mut Scanner) -> Result<i8, LexError> {
+fn read_charge(scanner: &mut Scanner<'_>) -> Result<i8, LexError> {
     let position = scanner.cursor();
     let Some(sign_character) = scanner.take_if(|c| c == b'+' || c == b'-') else {
         return Ok(0);
@@ -322,7 +322,7 @@ fn read_charge(scanner: &mut Scanner) -> Result<i8, LexError> {
 }
 
 /// Read a bracket atom. The opening `[` has already been consumed.
-fn read_bracket_atom(scanner: &mut Scanner) -> Result<BracketAtom, LexError> {
+fn read_bracket_atom(scanner: &mut Scanner<'_>) -> Result<BracketAtom, LexError> {
     // 0. read the isotope
     let isotope = read_number(scanner)?;
     // 1. read the symbol: a letter, then an optional lowercase letter
@@ -380,7 +380,7 @@ fn read_bracket_atom(scanner: &mut Scanner) -> Result<BracketAtom, LexError> {
 }
 
 /// Read one token, or return `Ok(None)` at the end of the input.
-fn next_token(scanner: &mut Scanner) -> Result<Option<Token>, LexError> {
+fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
     let start = scanner.cursor();
     let Some(c) = scanner.pop() else {
         return Ok(None);

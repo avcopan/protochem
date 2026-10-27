@@ -35,7 +35,7 @@ pixi run --no-install -e dev cargo run --example borrow_puzzles
 pixi run --no-install -e dev cargo test smiles_lexer
 ```
 
-(rust-analyzer's squiggles in VS Code show the same errors.)
+(rust-analyzer's diagnostics in Zed show the same errors.)
 
 ## Reading (≈ 40 min)
 
@@ -145,7 +145,10 @@ Write three fixes as three functions, `symmetrize_by_cloning`,
 3. **Take it out:** `let neighbors = std::mem::take(&mut graph.adjacency[i]);`
    leaves an empty `Vec` behind. Loop over `neighbors`, then put it back. There's no
    copy, but while the list is out, node `i` looks like it has no neighbors.
-   Which input would that break? (Hint: an edge `i -> i`.)
+   Try a self-loop `i -> i`. Putting the list back with
+   `graph.adjacency[i] = neighbors;` still gets it right. Why? What goes wrong if
+   you put it back with `graph.adjacency[i].extend(neighbors)` instead? Any code
+   that reads `adjacency[i]` while the list is out has the same problem.
 
 **New Rust:** `for symmetrize in [f, g, h]` loops over an array of functions
 with the same signature. That's handy for running all three on clones
@@ -242,8 +245,10 @@ impl<'a> Scanner<'a> {
   Match arms become byte literals: `b'C'`, `b'0'..=b'9'`, `b'\\'`. `u8` has the
   same `is_ascii_*` methods as `char`. A digit's value is `c - b'0'`.
 - Functions that take the scanner gain an anonymous lifetime:
-  `fn next_token(scanner: &mut Scanner) -> ...` still compiles thanks to elision.
-  Writing `Scanner<'_>` makes the borrow visible. Either is fine.
+  `fn next_token(scanner: &mut Scanner<'_>) -> ...`. Plain `&mut Scanner` would
+  still compile thanks to elision, but it hides that `Scanner` borrows something,
+  so the template's `rust_2018_idioms` lint (`elided_lifetimes_in_paths`) warns
+  on it. Write the `'_`.
 
 **New Rust:**
 - `Scanner<'a>` reads "a scanner that borrows something for `'a`." The struct
