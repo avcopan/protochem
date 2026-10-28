@@ -98,7 +98,8 @@ pub fn lex(smiles: &str) -> Result<Vec<Token>, LexError> {
 
 fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
     let start = scanner.cursor;
-    let Some(c) = scanner.pop() else {
+    // Whitespace or scanner end -> None
+    let Some(c) = scanner.pop().filter(|c| !c.is_ascii_whitespace()) else {
         return Ok(None);
     };
 
@@ -357,6 +358,20 @@ mod tests {
         for (smiles, expected) in [
             (".", vec![Token::Dot]),
             ("C.C", vec![atom(6), Token::Dot, atom(6)]),
+        ] {
+            assert_eq!(lex(smiles), Ok(expected), "{smiles}");
+        }
+    }
+
+    // Whitespace termination
+
+    #[test]
+    fn whitespace_termination() {
+        for (smiles, expected) in [
+            ("CC O", vec![atom(6), atom(6)]),
+            ("C\tX", vec![atom(6)]),
+            ("C\n", vec![atom(6)]),
+            ("C", vec![atom(6)]),
         ] {
             assert_eq!(lex(smiles), Ok(expected), "{smiles}");
         }
