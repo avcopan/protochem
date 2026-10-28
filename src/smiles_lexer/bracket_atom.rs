@@ -1,24 +1,40 @@
 use super::{Atom, LexError, Scanner, atom_from_symbol};
 
+/// A chirality marker inside brackets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Chirality {
+    /// `@`: `@TH1` or `@AL1`, depending on the center
     CounterClockwise,
+    /// `@@`: `@TH2` or `@AL2`, depending on the center
     Clockwise,
+    /// `@TH1`–`@TH2`
     Tetrahedral(u8),
+    /// `@AL1`–`@AL2`
     Allene(u8),
+    /// `@SP1`–`@SP3`
     SquarePlanar(u8),
+    /// `@TB1`–`@TB20`
     TrigonalBipyramidal(u8),
+    /// `@OH1`–`@OH30`
     Octahedral(u8),
 }
 
+/// The contents of a bracket atom, e.g. `[13CH3+:2]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BracketAtom {
+    /// The mass number, e.g. `13` in `[13C]`.
     pub isotope: Option<u16>,
+    /// The atomic number.
     pub atomic_number: u8,
+    /// Whether the symbol was lowercase, e.g. `[nH]`.
     pub aromatic: bool,
+    /// The chirality marker, e.g. `@@` in `[C@@H]`.
     pub chirality: Option<Chirality>,
+    /// The hydrogen count, e.g. `3` in `[CH3]`.
     pub hydrogens: u8,
+    /// The formal charge, e.g. `-1` in `[O-]`.
     pub charge: i8,
+    /// The atom class, e.g. `7` in `[CH3:7]`.
     pub class: Option<u16>,
 }
 
@@ -80,7 +96,10 @@ fn read_symbol(scanner: &mut Scanner<'_>) -> Result<Atom, LexError> {
     Ok(atom)
 }
 
-const CLASSES: [(&str, fn(u8) -> Chirality, u8); 5] = [
+// Prefix, constructor, largest number
+type ChiralClass = (&'static str, fn(u8) -> Chirality, u8);
+
+const CLASSES: [ChiralClass; 5] = [
     ("TH", Chirality::Tetrahedral, 2),
     ("AL", Chirality::Allene, 2),
     ("SP", Chirality::SquarePlanar, 3),

@@ -1,45 +1,89 @@
+//! A SMILES lexer.
+//!
+//! [`lex`] splits a SMILES string into [`Token`]s, checking each token on its own. Whether the
+//! tokens fit together (balanced branches, closed rings) is the parser's job.
+//!
+//! A bracket atom is `[isotope? symbol chirality? hcount? charge? class?]`.
 use crate::Element;
 
 mod bracket_atom;
 use bracket_atom::read_bracket_atom;
 pub use bracket_atom::{BracketAtom, Chirality};
 
+/// An organic-subset atom written without brackets, e.g. `C` or `c`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Atom {
+    /// The atomic number.
     pub atomic_number: u8,
+    /// Whether the symbol was lowercase.
     pub aromatic: bool,
 }
 
+/// An explicit bond symbol.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BondKind {
+    /// `-`
     Single,
+    /// `=`
     Double,
+    /// `#`
     Triple,
+    /// `$`
     Quadruple,
+    /// `:`
     Aromatic,
+    /// `/`
     Up,
+    /// `\`
     Down,
 }
 
+/// One SMILES token.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Token {
     // Atoms
+    /// `C`, `Cl`, `c`, ...
     Atom(Atom),
+    /// `[...]`
     BracketAtom(BracketAtom),
     // Bonds
+    /// `-`, `=`, `#`, ...
     Bond(BondKind),
     // Branches
+    /// `(`
     BranchOpen,
+    /// `)`
     BranchClose,
     // Ring closures
+    /// `1` or `%12`
     RingClosure(u8),
 }
 
+/// A lexing error.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum LexError {
+    /// Any error, until the specific variants are in.
     GenericPlaceholder,
 }
 
+/// Split a SMILES string into tokens.
+///
+/// # Errors
+///
+/// Returns a [`LexError`] if the input contains something that isn't a valid token, e.g. the
+/// `X` in `CX`, an unknown element in `[Xx]`, or an out-of-range chirality class in `[C@TH3]`.
+///
+/// # Examples
+///
+/// ```
+/// use protochem::smiles_lexer::{lex, Atom, Token};
+///
+/// let tokens = lex("CO").expect("valid SMILES");
+/// let carbon = Atom { atomic_number: 6, aromatic: false };
+/// let oxygen = Atom { atomic_number: 8, aromatic: false };
+/// assert_eq!(tokens, [Token::Atom(carbon), Token::Atom(oxygen)]);
+/// assert!(lex("CX").is_err());
+/// ```
 pub fn lex(smiles: &str) -> Result<Vec<Token>, LexError> {
     let mut scanner = Scanner::new(smiles);
     let mut tokens = Vec::new();
