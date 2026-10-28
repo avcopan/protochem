@@ -57,6 +57,9 @@ pub enum Token {
     // Ring closures
     /// `1` or `%12`
     RingClosure(u8),
+    // Fragment separators
+    /// `.`
+    Dot,
 }
 
 /// A lexing error.
@@ -121,6 +124,8 @@ fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
             let ones = scanner.take_digit().ok_or(LexError::GenericPlaceholder)?;
             Token::RingClosure(10 * tens + ones)
         }
+        // Fragment separators
+        b'.' => Token::Dot,
         // Other...
         _ => {
             return Err(LexError::GenericPlaceholder);
@@ -342,6 +347,18 @@ mod tests {
     fn ring_closure_errors() {
         for smiles in ["%", "C%", "C%1", "C%1X"] {
             assert!(lex(smiles).is_err(), "{smiles}");
+        }
+    }
+
+    // Fragment separators
+
+    #[test]
+    fn fragment_separators() {
+        for (smiles, expected) in [
+            (".", vec![Token::Dot]),
+            ("C.C", vec![atom(6), Token::Dot, atom(6)]),
+        ] {
+            assert_eq!(lex(smiles), Ok(expected), "{smiles}");
         }
     }
 
