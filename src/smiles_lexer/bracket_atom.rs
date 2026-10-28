@@ -1,4 +1,4 @@
-use super::{Atom, LexError, Scanner, atom_from_symbol};
+use super::{Atom, LexError, LexErrorKind, Scanner, atom_from_symbol};
 
 /// A chirality marker inside brackets.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -55,13 +55,13 @@ pub(super) fn read_bracket_atom(scanner: &mut Scanner<'_>) -> Result<BracketAtom
     let charge = read_charge(scanner)?;
     // Read class
     let class = if scanner.take_eq(b':') {
-        Some(read_number(scanner)?.ok_or(LexError::GenericPlaceholder)?)
+        Some(read_number(scanner)?.ok_or_else(|| scanner.unexpected())?)
     } else {
         None
     };
     // Read the closing bracket
     if !scanner.take_eq(b']') {
-        return Err(LexError::GenericPlaceholder);
+        return Err(scanner.unexpected());
     }
 
     Ok(BracketAtom {
@@ -76,6 +76,7 @@ pub(super) fn read_bracket_atom(scanner: &mut Scanner<'_>) -> Result<BracketAtom
 }
 
 fn read_number<T: std::str::FromStr>(scanner: &mut Scanner<'_>) -> Result<Option<T>, LexError> {
+    let start = scanner.cursor;
     let digits = scanner.take_while(|c| c.is_ascii_digit());
     if digits.is_empty() {
         return Ok(None);
@@ -83,15 +84,23 @@ fn read_number<T: std::str::FromStr>(scanner: &mut Scanner<'_>) -> Result<Option
     digits
         .parse()
         .map(Some)
-        .map_err(|_| LexError::GenericPlaceholder)
+        .map_err(|_| LexError::new(start, LexErrorKind::NumberOutOfRange))
 }
 
 fn read_symbol(scanner: &mut Scanner<'_>) -> Result<Atom, LexError> {
     let start = scanner.cursor;
     scanner.take_if(|c| c.is_ascii_alphabetic() || c == b'*');
     scanner.take_if(|c| c.is_ascii_lowercase());
-    let Some(atom) = atom_from_symbol(scanner.slice(start)) else {
-        return Err(LexError::GenericPlaceholder);
+    let symbol = scanner.slice(start);
+    if symbol.is_empty() {
+        return Err(scanner.unexpected());
+    }
+
+    let Some(atom) = atom_from_symbol(symbol) else {
+        return Err(LexError::new(
+            start,
+            LexErrorKind::UnknownElement(symbol.to_owned()),
+        ));
     };
     Ok(atom)
 }
@@ -121,28 +130,29 @@ fn read_chirality(scanner: &mut Scanner<'_>) -> Result<Option<Chirality>, LexErr
         return Ok(Some(Chirality::CounterClockwise));
     };
     // Handle TH, AL, SP, TB, OH
-    let n = read_number(scanner)?.ok_or(LexError::GenericPlaceholder)?;
+    let start = scanner.cursor;
+    let n = read_number(scanner)?.ok_or_else(|| scanner.unexpected())?;
     if !(1..=max).contains(&n) {
-        return Err(LexError::GenericPlaceholder);
+        return Err(LexError::new(start, LexErrorKind::NumberOutOfRange));
     }
     Ok(Some(make(n)))
 }
 
 fn read_charge(scanner: &mut Scanner<'_>) -> Result<i8, LexError> {
-    let (sign, symbol) = match scanner.peek() {
-        Some(b'+') => (1, b'+'),
-        Some(b'-') => (-1, b'-'),
-        _ => return Ok(0),
+    let Some(first) = scanner.take_if(|c| c == b'+' || c == b'-') else {
+        return Ok(0);
     };
-    let repeats = scanner.take_while(|c| c == symbol).len();
-    let magnitude: i8 = match read_number(scanner)? {
-        // +n/-n (max 15)
-        Some(n) if repeats == 1 && n <= 15 => n,
-        // +/- (n = 1) or ++/-- (n = 2)
-        None if repeats <= 2 => i8::try_from(repeats).map_err(|_| LexError::GenericPlaceholder)?,
-        _ => return Err(LexError::GenericPlaceholder),
+    let sign = if first == b'+' { 1 } else { -1 };
+    let magnitude = if scanner.take_eq(first) {
+        2
+    } else {
+        let start = scanner.cursor;
+        match read_number::<i8>(scanner)? {
+            None => 1,
+            Some(n) if n <= 15 => n,
+            Some(_) => return Err(LexError::new(start, LexErrorKind::NumberOutOfRange)),
+        }
     };
-
     Ok(sign * magnitude)
 }
 
@@ -150,6 +160,7 @@ fn read_charge(scanner: &mut Scanner<'_>) -> Result<i8, LexError> {
 mod tests {
     use super::super::{Token, lex};
     use super::*;
+    use LexErrorKind::*;
 
     /// Lexes `smiles`, which must be exactly one bracket atom.
     fn bracket(smiles: &str) -> BracketAtom {
@@ -300,39 +311,41 @@ mod tests {
 
     #[test]
     fn errors() {
-        for smiles in [
+        for (smiles, position, kind) in [
             // Structure
-            "[C",
-            "[]",
-            "[CH4",
+            ("[C", 2, UnexpectedEnd),
+            ("[]", 1, UnexpectedCharacter(']')),
+            ("[CH4", 4, UnexpectedEnd),
             // Symbol
-            "[Xx]",
-            "[13]",
-            // Number out of range
-            "[99999C]",
-            "[C+999]",
+            ("[Xx]", 1, UnknownElement("Xx".to_owned())),
+            ("[13]", 3, UnexpectedCharacter(']')),
+            ("[*c]", 1, UnknownElement("*c".to_owned())),
             // A hydrogen count is one digit
-            "[CH12]",
-            // A repeated sign takes no count
-            "[C++2]",
-            // No more than two signs
-            "[C+++]",
-            // Max charge of 15
-            "[C-16]",
+            ("[CH12]", 4, UnexpectedCharacter('2')),
             // A class needs a number
-            "[CH3:]",
+            ("[CH3:]", 5, UnexpectedCharacter(']')),
+            // A chirality class needs a number
+            ("[C@TH]", 5, UnexpectedCharacter(']')),
+            ("[C@SP]", 5, UnexpectedCharacter(']')),
+            // Number out of range
+            ("[99999C]", 1, NumberOutOfRange),
+            ("[C+999]", 3, NumberOutOfRange),
             // A chirality class needs a number in range
-            "[C@TH]",
-            "[C@TH0]",
-            "[C@TH3]",
-            "[C@AL3]",
-            "[Pt@SP4]",
-            "[As@TB21]",
-            "[Co@OH31]",
-            // Wildcard
-            "[*c]",
+            ("[C@TH0]", 5, NumberOutOfRange),
+            ("[C@TH3]", 5, NumberOutOfRange),
+            ("[C@AL3]", 5, NumberOutOfRange),
+            ("[Pt@SP4]", 6, NumberOutOfRange),
+            ("[As@TB21]", 6, NumberOutOfRange),
+            ("[Co@OH31]", 6, NumberOutOfRange),
+            // A repeated sign takes no count
+            ("[C++2]", 4, UnexpectedCharacter('2')),
+            // No more than two signs
+            ("[C+++]", 4, UnexpectedCharacter('+')),
+            // Max charge of 15
+            ("[C+16]", 3, NumberOutOfRange),
+            ("[C-16]", 3, NumberOutOfRange),
         ] {
-            assert!(lex(smiles).is_err(), "{smiles}");
+            assert_eq!(lex(smiles), Err(LexError { position, kind }), "{smiles}");
         }
     }
 }

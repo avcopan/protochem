@@ -5,6 +5,7 @@
 //!
 //! A bracket atom is `[isotope? symbol chirality? hcount? charge? class?]`.
 use crate::Element;
+use std::fmt;
 
 mod bracket_atom;
 use bracket_atom::read_bracket_atom;
@@ -63,29 +64,75 @@ pub enum Token {
 }
 
 /// A lexing error.
+#[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum LexError {
-    /// Any error, until the specific variants are in.
-    GenericPlaceholder,
+pub struct LexError {
+    /// Byte offset into the input.
+    pub position: usize,
+    /// What went wrong.
+    pub kind: LexErrorKind,
+}
+
+impl LexError {
+    fn new(position: usize, kind: LexErrorKind) -> Self {
+        Self { position, kind }
+    }
+}
+
+impl fmt::Display for LexError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{} at position {}", self.kind, self.position)
+    }
+}
+
+impl std::error::Error for LexError {}
+
+/// The kind of [`LexError`].
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum LexErrorKind {
+    /// An unexpected character occurred.
+    UnexpectedCharacter(char),
+    /// The input ended mid-token.
+    UnexpectedEnd,
+    /// The bracket-atom symbol isn't an element.
+    UnknownElement(String),
+    /// A number was out of range for its field.
+    NumberOutOfRange,
+}
+
+impl fmt::Display for LexErrorKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::UnexpectedCharacter(c) => write!(f, "unexpected character {c:?}"),
+            Self::UnexpectedEnd => write!(f, "unexpected end of input"),
+            Self::UnknownElement(s) => write!(f, "unknown element {s:?}"),
+            Self::NumberOutOfRange => write!(f, "number out of range"),
+        }
+    }
 }
 
 /// Split a SMILES string into tokens.
 ///
 /// # Errors
 ///
-/// Returns a [`LexError`] if the input contains something that isn't a valid token, e.g. the
-/// `X` in `CX`, an unknown element in `[Xx]`, or an out-of-range chirality class in `[C@TH3]`.
+/// Returns a [`LexError`] at the first thing that isn't a valid token, e.g. the `X` in `CX`, an
+/// unknown element in `[Xx]`, or an out-of-range chirality class in `[C@TH3]`. The error gives
+/// the byte position and a [`LexErrorKind`].
 ///
 /// # Examples
 ///
 /// ```
-/// use protochem::smiles_lexer::{lex, Atom, Token};
+/// use protochem::smiles_lexer::{lex, Atom, LexErrorKind, Token};
 ///
 /// let tokens = lex("CO").expect("valid SMILES");
 /// let carbon = Atom { atomic_number: 6, aromatic: false };
 /// let oxygen = Atom { atomic_number: 8, aromatic: false };
 /// assert_eq!(tokens, [Token::Atom(carbon), Token::Atom(oxygen)]);
-/// assert!(lex("CX").is_err());
+///
+/// let error = lex("CX").unwrap_err();
+/// assert_eq!(error.position, 1);
+/// assert_eq!(error.kind, LexErrorKind::UnexpectedCharacter('X'));
 /// ```
 pub fn lex(smiles: &str) -> Result<Vec<Token>, LexError> {
     let mut scanner = Scanner::new(smiles);
@@ -105,7 +152,7 @@ fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
 
     let token = match c {
         // Atoms
-        c if b"*BCNOPSFIbcnops".contains(&c) => Token::Atom(read_organic_atom(scanner, c, start)?),
+        c if b"*BCNOPSFIbcnops".contains(&c) => Token::Atom(read_organic_atom(scanner, c, start)),
         b'[' => Token::BracketAtom(read_bracket_atom(scanner)?),
         // Bonds
         b'-' => Token::Bond(BondKind::Single),
@@ -121,31 +168,29 @@ fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
         // Ring closures
         d @ b'0'..=b'9' => Token::RingClosure(d - b'0'),
         b'%' => {
-            let tens = scanner.take_digit().ok_or(LexError::GenericPlaceholder)?;
-            let ones = scanner.take_digit().ok_or(LexError::GenericPlaceholder)?;
+            let tens = scanner.take_digit().ok_or_else(|| scanner.unexpected())?;
+            let ones = scanner.take_digit().ok_or_else(|| scanner.unexpected())?;
             Token::RingClosure(10 * tens + ones)
         }
         // Fragment separators
         b'.' => Token::Dot,
         // Other...
         _ => {
-            return Err(LexError::GenericPlaceholder);
+            scanner.cursor = start; // un-pop the bad char so `unexpected` sees it
+            return Err(scanner.unexpected());
         }
     };
 
     Ok(Some(token))
 }
 
-fn read_organic_atom(scanner: &mut Scanner<'_>, c: u8, start: usize) -> Result<Atom, LexError> {
+fn read_organic_atom(scanner: &mut Scanner<'_>, c: u8, start: usize) -> Atom {
     match c {
         b'B' => scanner.take_eq(b'r'),
         b'C' => scanner.take_eq(b'l'),
         _ => false,
     };
-    let Some(atom) = atom_from_symbol(scanner.slice(start)) else {
-        return Err(LexError::GenericPlaceholder);
-    };
-    Ok(atom)
+    atom_from_symbol(scanner.slice(start)).expect("organic subset symbols should all be elements")
 }
 
 fn atom_from_symbol(symbol: &str) -> Option<Atom> {
@@ -197,6 +242,10 @@ impl<'a> Scanner<'a> {
         self.input.as_bytes().get(self.cursor).copied()
     }
 
+    fn peek_char(&self) -> Option<char> {
+        self.input.get(self.cursor..)?.chars().next()
+    }
+
     fn pop(&mut self) -> Option<u8> {
         let c = self.peek()?;
         self.cursor += 1;
@@ -234,11 +283,21 @@ impl<'a> Scanner<'a> {
     fn slice(&self, start: usize) -> &str {
         &self.input[start..self.cursor]
     }
+
+    // Errors
+    fn unexpected(&self) -> LexError {
+        let kind = self.peek_char().map_or(
+            LexErrorKind::UnexpectedEnd,
+            LexErrorKind::UnexpectedCharacter,
+        );
+        LexError::new(self.cursor, kind)
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use LexErrorKind::*;
 
     fn atom(atomic_number: u8) -> Token {
         Token::Atom(Atom {
@@ -289,13 +348,6 @@ mod tests {
             ("Cs", vec![atom(6), aromatic(16)]),
         ] {
             assert_eq!(lex(smiles), Ok(expected), "{smiles}");
-        }
-    }
-
-    #[test]
-    fn organic_atom_errors() {
-        for smiles in ["X", "CX", "A", "@", "H"] {
-            assert!(lex(smiles).is_err(), "{smiles}");
         }
     }
 
@@ -352,13 +404,6 @@ mod tests {
         ] {
             let expected = expected.into_iter().map(Token::RingClosure).collect();
             assert_eq!(lex(smiles), Ok(expected), "{smiles}");
-        }
-    }
-
-    #[test]
-    fn ring_closure_errors() {
-        for smiles in ["%", "C%", "C%1", "C%1X"] {
-            assert!(lex(smiles).is_err(), "{smiles}");
         }
     }
 
@@ -437,5 +482,43 @@ mod tests {
                 atom(8),
             ])
         );
+    }
+
+    // Error
+
+    #[test]
+    fn lex_error_kinds() {
+        for (smiles, position, kind) in [
+            ("X", 0, UnexpectedCharacter('X')),
+            ("A", 0, UnexpectedCharacter('A')),
+            ("@", 0, UnexpectedCharacter('@')),
+            ("H", 0, UnexpectedCharacter('H')),
+            ("CX", 1, UnexpectedCharacter('X')),
+            ("Cé", 1, UnexpectedCharacter('é')),
+            ("%", 1, UnexpectedEnd),
+            ("C%", 2, UnexpectedEnd),
+            ("C%1", 3, UnexpectedEnd),
+            ("C%1X", 3, UnexpectedCharacter('X')),
+        ] {
+            assert_eq!(lex(smiles), Err(LexError { position, kind }), "{smiles}");
+        }
+    }
+
+    #[test]
+    fn error_messages() {
+        for (smiles, message) in [
+            ("CX", "unexpected character 'X' at position 1"),
+            ("C%", "unexpected end of input at position 2"),
+            ("[Xx]", "unknown element \"Xx\" at position 1"),
+            ("[C@TH3]", "number out of range at position 5"),
+        ] {
+            assert_eq!(lex(smiles).unwrap_err().to_string(), message, "{smiles}");
+        }
+    }
+
+    #[test]
+    fn lex_error_is_a_good_error() {
+        fn assert_error<E: std::error::Error + Send + Sync + 'static>() {}
+        assert_error::<LexError>();
     }
 }
