@@ -13,7 +13,7 @@ pub use bracket_atom::{BracketAtom, Chirality};
 /// An organic-subset atom written without brackets, e.g. `C` or `c`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Atom {
-    /// The atomic number.
+    /// The atomic number, or `0` for the wildcard `*`.
     pub atomic_number: u8,
     /// Whether the symbol was lowercase.
     pub aromatic: bool,
@@ -105,7 +105,7 @@ fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
 
     let token = match c {
         // Atoms
-        c if b"BCNOPSFIbcnops".contains(&c) => Token::Atom(read_organic_atom(scanner, c, start)?),
+        c if b"*BCNOPSFIbcnops".contains(&c) => Token::Atom(read_organic_atom(scanner, c, start)?),
         b'[' => Token::BracketAtom(read_bracket_atom(scanner)?),
         // Bonds
         b'-' => Token::Bond(BondKind::Single),
@@ -149,10 +149,19 @@ fn read_organic_atom(scanner: &mut Scanner<'_>, c: u8, start: usize) -> Result<A
 }
 
 fn atom_from_symbol(symbol: &str) -> Option<Atom> {
+    // Handle wildcard atoms
+    if symbol == "*" {
+        return Some(Atom {
+            atomic_number: 0,
+            aromatic: false,
+        });
+    }
+    // Determine aromaticity
     let (symbol, aromatic) = match aromatic_symbol(symbol) {
         Some(upper) => (upper, true),
         _ => (symbol, false),
     };
+    // Check that the element is valid
     let element = Element::from_symbol(symbol)?;
     Some(Atom {
         atomic_number: element.atomic_number,
@@ -273,6 +282,8 @@ mod tests {
             ("o", vec![aromatic(8)]),
             ("p", vec![aromatic(15)]),
             ("s", vec![aromatic(16)]),
+            // Wildcard
+            ("*", vec![atom(0)]),
             // Outside brackets these are two atoms, not scandium or caesium
             ("Sc", vec![atom(16), aromatic(6)]),
             ("Cs", vec![atom(6), aromatic(16)]),

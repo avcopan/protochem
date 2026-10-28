@@ -24,7 +24,7 @@ pub enum Chirality {
 pub struct BracketAtom {
     /// The mass number, e.g. `13` in `[13C]`.
     pub isotope: Option<u16>,
-    /// The atomic number.
+    /// The atomic number, or `0` for the wildcard `*`.
     pub atomic_number: u8,
     /// Whether the symbol was lowercase, e.g. `[nH]`.
     pub aromatic: bool,
@@ -88,7 +88,7 @@ fn read_number<T: std::str::FromStr>(scanner: &mut Scanner<'_>) -> Result<Option
 
 fn read_symbol(scanner: &mut Scanner<'_>) -> Result<Atom, LexError> {
     let start = scanner.cursor;
-    scanner.take_if(|c| c.is_ascii_alphabetic());
+    scanner.take_if(|c| c.is_ascii_alphabetic() || c == b'*');
     scanner.take_if(|c| c.is_ascii_lowercase());
     let Some(atom) = atom_from_symbol(scanner.slice(start)) else {
         return Err(LexError::GenericPlaceholder);
@@ -192,6 +192,7 @@ mod tests {
                     ..aromatic(7)
                 },
             ),
+            ("[*]", plain(0)),
         ] {
             assert_eq!(bracket(smiles), expected, "{smiles}");
         }
@@ -205,6 +206,7 @@ mod tests {
             ("[2H]", Some(2)),
             ("[238U]", Some(238)),
             ("[C]", None),
+            ("[2*]", Some(2)),
         ] {
             assert_eq!(bracket(smiles).isotope, expected, "{smiles}");
         }
@@ -238,7 +240,13 @@ mod tests {
 
     #[test]
     fn hydrogens() {
-        for (smiles, expected) in [("[C]", 0), ("[CH]", 1), ("[CH4]", 4), ("[C@@H3]", 3)] {
+        for (smiles, expected) in [
+            ("[C]", 0),
+            ("[CH]", 1),
+            ("[CH4]", 4),
+            ("[C@@H3]", 3),
+            ("[*H]", 1),
+        ] {
             assert_eq!(bracket(smiles).hydrogens, expected, "{smiles}");
         }
     }
@@ -261,7 +269,12 @@ mod tests {
 
     #[test]
     fn class() {
-        for (smiles, expected) in [("[C]", None), ("[CH3:7]", Some(7)), ("[O:0]", Some(0))] {
+        for (smiles, expected) in [
+            ("[C]", None),
+            ("[CH3:7]", Some(7)),
+            ("[O:0]", Some(0)),
+            ("[*:123]", Some(123)),
+        ] {
             assert_eq!(bracket(smiles).class, expected, "{smiles}");
         }
     }
@@ -308,6 +321,8 @@ mod tests {
             "[Pt@SP4]",
             "[As@TB21]",
             "[Co@OH31]",
+            // Wildcard
+            "[*c]",
         ] {
             assert!(lex(smiles).is_err(), "{smiles}");
         }
