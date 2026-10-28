@@ -136,9 +136,11 @@ fn read_charge(scanner: &mut Scanner<'_>) -> Result<i8, LexError> {
     };
     let repeats = scanner.take_while(|c| c == symbol).len();
     let magnitude: i8 = match read_number(scanner)? {
-        Some(n) if repeats == 1 => n,
-        Some(_) => return Err(LexError::GenericPlaceholder),
-        None => i8::try_from(repeats).map_err(|_| LexError::GenericPlaceholder)?,
+        // +n/-n (max 15)
+        Some(n) if repeats == 1 && n <= 15 => n,
+        // +/- (n = 1) or ++/-- (n = 2)
+        None if repeats <= 2 => i8::try_from(repeats).map_err(|_| LexError::GenericPlaceholder)?,
+        _ => return Err(LexError::GenericPlaceholder),
     };
 
     Ok(sign * magnitude)
@@ -262,6 +264,8 @@ mod tests {
             ("[Fe++]", 2),
             ("[O--]", -2),
             ("[Ti+12]", 12),
+            ("[C+15]", 15),
+            ("[C-15]", -15),
         ] {
             assert_eq!(bracket(smiles).charge, expected, "{smiles}");
         }
@@ -311,6 +315,10 @@ mod tests {
             "[CH12]",
             // A repeated sign takes no count
             "[C++2]",
+            // No more than two signs
+            "[C+++]",
+            // Max charge of 15
+            "[C-16]",
             // A class needs a number
             "[CH3:]",
             // A chirality class needs a number in range
