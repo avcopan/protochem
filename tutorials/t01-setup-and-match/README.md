@@ -14,7 +14,7 @@ template's tooling, and practice `match`, which is where you stopped in the book
 ## Reading (≈ 40 min)
 
 - Rust book **6.2** "The `match` Control Flow Construct" and **6.3**
-  "`if let` and `let...else`" (`resources - rust/book/src/ch06-02-match.md`,
+  "`if let` and `let...else`" (`~/claude/resources/rust/book/src/ch06-02-match.md`,
   `ch06-03-if-let.md`).
 - Rust book **7.1–7.5** (packages, crates, modules). Skim; the template already
   sets up `lib.rs` and modules, and you just need to recognize `mod`, `pub`, `use`.
@@ -100,7 +100,7 @@ element. Then run `pixi run lint` and fix whatever clippy says.
 
 From here on, code is reviewed against the
 [Rust API Guidelines](https://rust-lang.github.io/api-guidelines/checklist.html)
-(local copy: `~/code/sm/resources - rust/api-guidelines/src/`). Reviews cite them
+(local copy: `~/claude/resources/rust/api-guidelines/src/`). Reviews cite them
 by code. The ones this tutorial touches:
 
 - **C-CASE**: `snake_case` functions, `UpperCamelCase` types. Nothing to decide

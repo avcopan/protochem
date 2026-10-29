@@ -112,7 +112,7 @@ pub enum LexError {
 /// A cursor over the characters of a string.
 ///
 /// This is modeled on `purr`'s `Scanner` (see
-/// `resources - rust-graph-and-cheminformatics-info/purr/src/read/scanner.rs`).
+/// `~/code/sm/resources/chem/purr/src/read/scanner.rs`).
 /// Working with a `Vec<char>` is simpler than with UTF-8 byte offsets; tutorial 03
 /// redoes this with byte slices.
 #[derive(Debug, Clone)]

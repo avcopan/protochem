@@ -44,7 +44,7 @@ pixi run --no-install -e dev cargo test smiles_lexer
 - Rust book **10.3** "Validating References with Lifetimes". Skip "Generic Type
   Parameters, Trait Bounds, and Lifetimes Together" at the end.
 - Optional warm-ups: FEI lesson 03's `tests/01_longest.rs`, `02_strip_prefix.rs`
-  and `06_zerocopy_parsing.rs` (in `resources - rust/rust-course-fei/lessons/03/exercises/`).
+  and `06_zerocopy_parsing.rs` (in `~/claude/resources/rust/rust-course-fei/lessons/03/exercises/`).
 
 ---
 

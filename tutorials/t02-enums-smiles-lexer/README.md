@@ -33,7 +33,7 @@ Run the tests with `pixi run -e dev cargo test smiles_lexer`.
   `Result`" (the `?` operator). **5.1–5.3** (structs and `impl` blocks) if you
   haven't seen them yet: you write a small struct in step 2.
 - Rust book **19.3** "Pattern Syntax", as a reference to skim.
-- Optional: how `purr` does it, in `resources - rust-graph-and-cheminformatics-info/purr/src/read/`
+- Optional: how `purr` does it, in `~/code/sm/resources/chem/purr/src/read/`
   (`scanner.rs`, `read_organic.rs`, `read_bracket.rs`).
 
 ## Step 0: Wire up the module (2 min)
