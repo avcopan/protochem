@@ -63,6 +63,17 @@ pub enum Token {
     Dot,
 }
 
+/// A token plus the input text it came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Lexeme<'a> {
+    /// The token.
+    pub token: Token,
+    /// The token's text, borrowed from the input.
+    pub text: &'a str,
+    /// Byt offset of `text` in the input.
+    pub position: usize,
+}
+
 /// A lexing error.
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -112,6 +123,55 @@ impl fmt::Display for LexErrorKind {
     }
 }
 
+/// An iterator over the lexemes of a SMILES string.
+#[derive(Debug, Clone)]
+pub struct Lexer<'a> {
+    scanner: Scanner<'a>,
+    done: bool,
+}
+
+impl<'a> Lexer<'a> {
+    /// Initialize new lexer for `smiles`.
+    #[must_use]
+    pub fn new(smiles: &'a str) -> Self {
+        let scanner = Scanner::new(smiles);
+        Self {
+            scanner,
+            done: false,
+        }
+    }
+}
+
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Result<Lexeme<'a>, LexError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        let position = self.scanner.cursor;
+        let result = next_token(&mut self.scanner);
+        self.done = !matches!(result, Ok(Some(_)));
+        let text = self.scanner.slice(position);
+
+        result
+            // Result<Option<T>, E> -> Option<Result<T, E>>
+            .transpose()
+            // Option::map (operates on r <- Some(r))
+            .map(|result| {
+                // Result::map (operates on t <- Ok(t))
+                result.map(|token| Lexeme {
+                    token,
+                    text,
+                    position,
+                })
+            })
+    }
+}
+
+impl std::iter::FusedIterator for Lexer<'_> {}
+
 /// Split a SMILES string into tokens.
 ///
 /// # Errors
@@ -135,12 +195,9 @@ impl fmt::Display for LexErrorKind {
 /// assert_eq!(error.kind, LexErrorKind::UnexpectedCharacter('X'));
 /// ```
 pub fn lex(smiles: &str) -> Result<Vec<Token>, LexError> {
-    let mut scanner = Scanner::new(smiles);
-    let mut tokens = Vec::new();
-    while let Some(token) = next_token(&mut scanner)? {
-        tokens.push(token);
-    }
-    Ok(tokens)
+    Lexer::new(smiles)
+        .map(|result| result.map(|lexeme| lexeme.token))
+        .collect()
 }
 
 fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
@@ -228,6 +285,7 @@ fn aromatic_symbol(symbol: &str) -> Option<&'static str> {
     }
 }
 
+#[derive(Debug, Clone)]
 struct Scanner<'a> {
     input: &'a str,
     cursor: usize,
@@ -258,7 +316,7 @@ impl<'a> Scanner<'a> {
         Some(c)
     }
 
-    fn take_while(&mut self, predicate: impl Fn(u8) -> bool) -> &str {
+    fn take_while(&mut self, predicate: impl Fn(u8) -> bool) -> &'a str {
         let start = self.cursor;
         while self.take_if(&predicate).is_some() {}
         self.slice(start)
@@ -280,7 +338,7 @@ impl<'a> Scanner<'a> {
         self.take_if(|c| c.is_ascii_digit()).map(|d| d - b'0')
     }
 
-    fn slice(&self, start: usize) -> &str {
+    fn slice(&self, start: usize) -> &'a str {
         &self.input[start..self.cursor]
     }
 
@@ -520,5 +578,45 @@ mod tests {
     fn lex_error_is_a_good_error() {
         fn assert_error<E: std::error::Error + Send + Sync + 'static>() {}
         assert_error::<LexError>();
+    }
+
+    // Lexer
+    #[test]
+    fn lexeme_texts_and_positions() {
+        let lexemes: Vec<_> = Lexer::new("C[13CH4]%12Cl")
+            .map(|result| result.expect("valid SMILES"))
+            .map(|lexeme| (lexeme.text, lexeme.position))
+            .collect();
+        assert_eq!(lexemes, [("C", 0), ("[13CH4]", 1), ("%12", 8), ("Cl", 11)]);
+    }
+
+    #[test]
+    fn lexer_stops_after_error() {
+        let mut lexer = Lexer::new("CXC");
+        assert!(matches!(lexer.next(), Some(Ok(_))));
+        assert!(matches!(lexer.next(), Some(Err(_))));
+        assert!(lexer.next().is_none());
+        assert!(lexer.next().is_none());
+    }
+
+    #[test]
+    fn lexer_stops_after_whitespace() {
+        let mut lexer = Lexer::new("C C");
+        assert!(matches!(lexer.next(), Some(Ok(_))));
+        assert!(lexer.next().is_none());
+        assert!(lexer.next().is_none());
+        assert!(lexer.next().is_none());
+    }
+
+    #[test]
+    fn lexemes_outlive_lexer() {
+        let smiles = String::from("CCO");
+        let lexemes: Vec<_> = {
+            let lexer = Lexer::new(&smiles);
+            lexer.map(|result| result.expect("valid SMILES")).collect()
+        };
+        assert_eq!(lexemes.len(), 3);
+        let texts: Vec<_> = lexemes.iter().map(|l| l.text).collect();
+        assert_eq!(texts, vec!["C", "C", "O"]);
     }
 }
