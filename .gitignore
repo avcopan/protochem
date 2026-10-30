@@ -3,6 +3,8 @@
 
 # Rust build artifacts
 /target
+# Nested scratch crates (e.g. tutorials/*/funcfeats)
+target/
 
 # Compiled Python extension modules (placed in python/ by editable builds)
 *.so
