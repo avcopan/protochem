@@ -333,7 +333,7 @@ fn hill_key(symbol: &str, has_carbon: bool) -> (u8, &str) {
     }
 }
 
-/// A set of visited atoms, as a `Vec<bool>` indexed by atom.
+// A set of visited atoms, as a `Vec<bool>` indexed by atom.
 #[derive(Debug)]
 struct Visited(Vec<bool>);
 
@@ -342,7 +342,7 @@ impl Visited {
         Self(vec![false; atom_count])
     }
 
-    /// Mark `atom` as visited. Return `true` if it wasn't before, like `HashSet::insert`.
+    // Mark `atom` as visited. Return `true` if it wasn't before, like `HashSet::insert`.
     fn insert(&mut self, atom: AtomIndex) -> bool {
         !std::mem::replace(&mut self.0[atom.index()], true)
     }
@@ -360,7 +360,7 @@ mod tests {
         indices.iter().copied().map(AtomIndex::new).collect()
     }
 
-    /// Ethanol with explicit hydrogens: C0-C1-O2, H3-H5 on C0, H6-H7 on C1, H8 on O2.
+    // Ethanol with explicit hydrogens: C0-C1-O2, H3-H5 on C0, H6-H7 on C1, H8 on O2.
     fn ethanol() -> MolGraph {
         let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
         let bonds = [[0, 1], [1, 2], [0, 3], [0, 4], [0, 5], [1, 6], [1, 7], [2, 8]];
