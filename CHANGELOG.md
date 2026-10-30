@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+## [0.0.2] - 2026-10-30
+
 ### Added
 
 - `element` module with an `Element` type (re-exported at the crate root), looked up by
