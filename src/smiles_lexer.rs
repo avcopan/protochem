@@ -1,7 +1,9 @@
 //! A SMILES lexer.
 //!
-//! [`lex`] splits a SMILES string into [`Token`]s, checking each token on its own. Whether the
-//! tokens fit together (balanced branches, closed rings) is the parser's job.
+//! [`Lexer`] iterates over the [`Lexeme`]s of a SMILES string: each [`Token`] with the input
+//! text it came from and its position. [`lex`] collects just the tokens. Each token is checked
+//! on its own. Whether the tokens fit together (balanced branches, closed rings) is the parser's
+//! job.
 //!
 //! A bracket atom is `[isotope? symbol chirality? hcount? charge? class?]`.
 use crate::Element;
@@ -10,6 +12,146 @@ use std::fmt;
 mod bracket_atom;
 use bracket_atom::read_bracket_atom;
 pub use bracket_atom::{BracketAtom, Chirality};
+
+/// An iterator over the lexemes of a SMILES string.
+///
+/// Each [`Lexeme`] borrows its `text` from the input and records its byte
+/// `position`. The lexer stops at the first whitespace, the end of the string,
+/// or after the first error.
+///
+/// # Examples
+///
+/// ```
+/// use protochem::smiles_lexer::Lexer;
+///
+/// let texts: Vec<_> = Lexer::new("[CH2]CO").map(|lexeme| lexeme.unwrap().text).collect();
+/// assert_eq!(texts, ["[CH2]", "C", "O"]);
+/// ```
+///
+/// Lexemes borrow from the input, so they can't outlive it:
+/// ```compile_fail,E0597
+/// use protochem::smiles_lexer::Lexer;
+///
+/// let lexemes: Vec<_> = {
+///     let smiles = String::from("[CH2]CO");
+///     Lexer::new(&smiles).collect()
+/// };
+/// // error: `lexemes` borrow from `smiles`, which has gone out of scope
+/// println!("{lexemes:?}");
+/// ```
+#[must_use = "iterators are lazy and do nothing unless consumed"]
+#[derive(Debug, Clone)]
+pub struct Lexer<'a> {
+    scanner: Scanner<'a>,
+    done: bool,
+}
+
+impl<'a> Lexer<'a> {
+    /// Create a lexer over `smiles`.
+    pub fn new(smiles: &'a str) -> Self {
+        let scanner = Scanner::new(smiles);
+        Self {
+            scanner,
+            done: false,
+        }
+    }
+}
+
+impl<'a> Iterator for Lexer<'a> {
+    type Item = Result<Lexeme<'a>, LexError>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+
+        let position = self.scanner.cursor;
+        let result = next_token(&mut self.scanner);
+        self.done = !matches!(result, Ok(Some(_)));
+        let text = self.scanner.slice(position);
+
+        result
+            // Result<Option<T>, E> -> Option<Result<T, E>>
+            .transpose()
+            // Option::map (operates on r <- Some(r))
+            .map(|result| {
+                // Result::map (operates on t <- Ok(t))
+                result.map(|token| Lexeme {
+                    token,
+                    text,
+                    position,
+                })
+            })
+    }
+}
+
+impl std::iter::FusedIterator for Lexer<'_> {}
+
+/// A token plus the input text it came from.
+#[non_exhaustive]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct Lexeme<'a> {
+    /// The token.
+    pub token: Token,
+    /// The token's text, borrowed from the input.
+    pub text: &'a str,
+    /// Byte offset of `text` in the input.
+    pub position: usize,
+}
+
+/// Split a SMILES string into tokens.
+///
+/// Use [`Lexer`] instead to obtain the text and positions of each lexeme.
+///
+/// # Errors
+///
+/// Returns a [`LexError`] at the first thing that isn't a valid token, e.g. the `X` in `CX`, an
+/// unknown element in `[Xx]`, or an out-of-range chirality class in `[C@TH3]`. The error gives
+/// the byte position and a [`LexErrorKind`].
+///
+/// # Examples
+///
+/// ```
+/// use protochem::smiles_lexer::{lex, Atom, LexErrorKind, Token};
+///
+/// let tokens = lex("CO").expect("valid SMILES");
+/// let carbon = Atom { atomic_number: 6, aromatic: false };
+/// let oxygen = Atom { atomic_number: 8, aromatic: false };
+/// assert_eq!(tokens, [Token::Atom(carbon), Token::Atom(oxygen)]);
+///
+/// let error = lex("CX").unwrap_err();
+/// assert_eq!(error.position, 1);
+/// assert_eq!(error.kind, LexErrorKind::UnexpectedCharacter('X'));
+/// ```
+pub fn lex(smiles: &str) -> Result<Vec<Token>, LexError> {
+    Lexer::new(smiles)
+        .map(|result| result.map(|lexeme| lexeme.token))
+        .collect()
+}
+
+/// One SMILES token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Token {
+    // Atoms
+    /// `C`, `Cl`, `c`, ...
+    Atom(Atom),
+    /// `[...]`
+    BracketAtom(BracketAtom),
+    // Bonds
+    /// `-`, `=`, `#`, ...
+    Bond(BondKind),
+    // Branches
+    /// `(`
+    BranchOpen,
+    /// `)`
+    BranchClose,
+    // Ring closures
+    /// `1` or `%12`
+    RingClosure(u8),
+    // Fragment separators
+    /// `.`
+    Dot,
+}
 
 /// An organic-subset atom written without brackets, e.g. `C` or `c`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -37,41 +179,6 @@ pub enum BondKind {
     Up,
     /// `\`
     Down,
-}
-
-/// One SMILES token.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Token {
-    // Atoms
-    /// `C`, `Cl`, `c`, ...
-    Atom(Atom),
-    /// `[...]`
-    BracketAtom(BracketAtom),
-    // Bonds
-    /// `-`, `=`, `#`, ...
-    Bond(BondKind),
-    // Branches
-    /// `(`
-    BranchOpen,
-    /// `)`
-    BranchClose,
-    // Ring closures
-    /// `1` or `%12`
-    RingClosure(u8),
-    // Fragment separators
-    /// `.`
-    Dot,
-}
-
-/// A token plus the input text it came from.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub struct Lexeme<'a> {
-    /// The token.
-    pub token: Token,
-    /// The token's text, borrowed from the input.
-    pub text: &'a str,
-    /// Byte offset of `text` in the input.
-    pub position: usize,
 }
 
 /// A lexing error.
@@ -123,110 +230,6 @@ impl fmt::Display for LexErrorKind {
     }
 }
 
-/// An iterator over the lexemes of a SMILES string.
-///
-/// Each [`Lexeme`] borrows its `text` from the input and records its byte
-/// `position`. The lexer stops at the first whitespace, the end of the string,
-/// or after the first error.
-///
-/// # Examples
-///
-/// ```
-/// use protochem::smiles_lexer::Lexer;
-///
-/// let texts: Vec<_> = Lexer::new("[CH2]CO").map(|lexeme| lexeme.unwrap().text).collect();
-/// assert_eq!(texts, ["[CH2]", "C", "O"]);
-/// ```
-///
-/// Lexemes borrow from the input, so they can't outlive it:
-/// ```compile_fail,E0597
-/// use protochem::smiles_lexer::Lexer;
-///
-/// let lexemes: Vec<_> = {
-///     let smiles = String::from("[CH2]CO");
-///     Lexer::new(&smiles).collect()
-/// };
-/// // error: `lexemes` borrow from `smiles`, which has gone out of scope
-/// println!("{lexemes:?}");
-/// ```
-#[derive(Debug, Clone)]
-pub struct Lexer<'a> {
-    scanner: Scanner<'a>,
-    done: bool,
-}
-
-impl<'a> Lexer<'a> {
-    /// Create a lexer over `smiles`.
-    #[must_use]
-    pub fn new(smiles: &'a str) -> Self {
-        let scanner = Scanner::new(smiles);
-        Self {
-            scanner,
-            done: false,
-        }
-    }
-}
-
-impl<'a> Iterator for Lexer<'a> {
-    type Item = Result<Lexeme<'a>, LexError>;
-
-    fn next(&mut self) -> Option<Self::Item> {
-        if self.done {
-            return None;
-        }
-
-        let position = self.scanner.cursor;
-        let result = next_token(&mut self.scanner);
-        self.done = !matches!(result, Ok(Some(_)));
-        let text = self.scanner.slice(position);
-
-        result
-            // Result<Option<T>, E> -> Option<Result<T, E>>
-            .transpose()
-            // Option::map (operates on r <- Some(r))
-            .map(|result| {
-                // Result::map (operates on t <- Ok(t))
-                result.map(|token| Lexeme {
-                    token,
-                    text,
-                    position,
-                })
-            })
-    }
-}
-
-impl std::iter::FusedIterator for Lexer<'_> {}
-
-/// Split a SMILES string into tokens.
-///
-/// Use [`Lexer`] instead to obtain the text and positions of each lexeme.
-///
-/// # Errors
-///
-/// Returns a [`LexError`] at the first thing that isn't a valid token, e.g. the `X` in `CX`, an
-/// unknown element in `[Xx]`, or an out-of-range chirality class in `[C@TH3]`. The error gives
-/// the byte position and a [`LexErrorKind`].
-///
-/// # Examples
-///
-/// ```
-/// use protochem::smiles_lexer::{lex, Atom, LexErrorKind, Token};
-///
-/// let tokens = lex("CO").expect("valid SMILES");
-/// let carbon = Atom { atomic_number: 6, aromatic: false };
-/// let oxygen = Atom { atomic_number: 8, aromatic: false };
-/// assert_eq!(tokens, [Token::Atom(carbon), Token::Atom(oxygen)]);
-///
-/// let error = lex("CX").unwrap_err();
-/// assert_eq!(error.position, 1);
-/// assert_eq!(error.kind, LexErrorKind::UnexpectedCharacter('X'));
-/// ```
-pub fn lex(smiles: &str) -> Result<Vec<Token>, LexError> {
-    Lexer::new(smiles)
-        .map(|result| result.map(|lexeme| lexeme.token))
-        .collect()
-}
-
 fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
     let start = scanner.cursor;
     // Whitespace or scanner end -> None
@@ -270,8 +273,8 @@ fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
 
 fn read_organic_atom(scanner: &mut Scanner<'_>, c: u8, start: usize) -> Atom {
     match c {
-        b'B' => scanner.take_eq(b'r'),
-        b'C' => scanner.take_eq(b'l'),
+        b'B' => scanner.take_eq(b'r'), // Br
+        b'C' => scanner.take_eq(b'l'), // Cl
         _ => false,
     };
     atom_from_symbol(scanner.slice(start)).expect("organic subset symbols should all be elements")
@@ -400,6 +403,47 @@ mod tests {
 
     fn bond(kind: BondKind) -> Token {
         Token::Bond(kind)
+    }
+
+    // Lexer
+
+    #[test]
+    fn lexeme_texts_and_positions() {
+        let lexemes: Vec<_> = Lexer::new("C[13CH4]%12Cl")
+            .map(|result| result.expect("valid SMILES"))
+            .map(|lexeme| (lexeme.text, lexeme.position))
+            .collect();
+        assert_eq!(lexemes, [("C", 0), ("[13CH4]", 1), ("%12", 8), ("Cl", 11)]);
+    }
+
+    #[test]
+    fn lexer_stops_after_error() {
+        let mut lexer = Lexer::new("CXC");
+        assert!(matches!(lexer.next(), Some(Ok(_))));
+        assert!(matches!(lexer.next(), Some(Err(_))));
+        assert!(lexer.next().is_none());
+        assert!(lexer.next().is_none());
+    }
+
+    #[test]
+    fn lexer_stops_after_whitespace() {
+        let mut lexer = Lexer::new("C C");
+        assert!(matches!(lexer.next(), Some(Ok(_))));
+        assert!(lexer.next().is_none());
+        assert!(lexer.next().is_none());
+        assert!(lexer.next().is_none());
+    }
+
+    #[test]
+    fn lexemes_outlive_lexer() {
+        let smiles = String::from("CCO");
+        let lexemes: Vec<_> = {
+            let lexer = Lexer::new(&smiles);
+            lexer.map(|result| result.expect("valid SMILES")).collect()
+        };
+        assert_eq!(lexemes.len(), 3);
+        let texts: Vec<_> = lexemes.iter().map(|l| l.text).collect();
+        assert_eq!(texts, vec!["C", "C", "O"]);
     }
 
     // Atoms
@@ -605,45 +649,5 @@ mod tests {
     fn lex_error_is_a_good_error() {
         fn assert_error<E: std::error::Error + Send + Sync + 'static>() {}
         assert_error::<LexError>();
-    }
-
-    // Lexer
-    #[test]
-    fn lexeme_texts_and_positions() {
-        let lexemes: Vec<_> = Lexer::new("C[13CH4]%12Cl")
-            .map(|result| result.expect("valid SMILES"))
-            .map(|lexeme| (lexeme.text, lexeme.position))
-            .collect();
-        assert_eq!(lexemes, [("C", 0), ("[13CH4]", 1), ("%12", 8), ("Cl", 11)]);
-    }
-
-    #[test]
-    fn lexer_stops_after_error() {
-        let mut lexer = Lexer::new("CXC");
-        assert!(matches!(lexer.next(), Some(Ok(_))));
-        assert!(matches!(lexer.next(), Some(Err(_))));
-        assert!(lexer.next().is_none());
-        assert!(lexer.next().is_none());
-    }
-
-    #[test]
-    fn lexer_stops_after_whitespace() {
-        let mut lexer = Lexer::new("C C");
-        assert!(matches!(lexer.next(), Some(Ok(_))));
-        assert!(lexer.next().is_none());
-        assert!(lexer.next().is_none());
-        assert!(lexer.next().is_none());
-    }
-
-    #[test]
-    fn lexemes_outlive_lexer() {
-        let smiles = String::from("CCO");
-        let lexemes: Vec<_> = {
-            let lexer = Lexer::new(&smiles);
-            lexer.map(|result| result.expect("valid SMILES")).collect()
-        };
-        assert_eq!(lexemes.len(), 3);
-        let texts: Vec<_> = lexemes.iter().map(|l| l.text).collect();
-        assert_eq!(texts, vec!["C", "C", "O"]);
     }
 }

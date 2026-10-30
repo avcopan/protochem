@@ -1,24 +1,5 @@
 use super::{Atom, LexError, LexErrorKind, Scanner, atom_from_symbol};
 
-/// A chirality marker inside brackets.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum Chirality {
-    /// `@`: `@TH1` or `@AL1`, depending on the center
-    CounterClockwise,
-    /// `@@`: `@TH2` or `@AL2`, depending on the center
-    Clockwise,
-    /// `@TH1`–`@TH2`
-    Tetrahedral(u8),
-    /// `@AL1`–`@AL2`
-    Allene(u8),
-    /// `@SP1`–`@SP3`
-    SquarePlanar(u8),
-    /// `@TB1`–`@TB20`
-    TrigonalBipyramidal(u8),
-    /// `@OH1`–`@OH30`
-    Octahedral(u8),
-}
-
 /// The contents of a bracket atom, e.g. `[13CH3+:2]`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct BracketAtom {
@@ -36,6 +17,25 @@ pub struct BracketAtom {
     pub charge: i8,
     /// The atom class, e.g. `7` in `[CH3:7]`.
     pub class: Option<u16>,
+}
+
+/// A chirality marker inside brackets.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Chirality {
+    /// `@`: `@TH1` or `@AL1`, depending on the center
+    CounterClockwise,
+    /// `@@`: `@TH2` or `@AL2`, depending on the center
+    Clockwise,
+    /// `@TH1`–`@TH2`
+    Tetrahedral(u8),
+    /// `@AL1`–`@AL2`
+    Allene(u8),
+    /// `@SP1`–`@SP3`
+    SquarePlanar(u8),
+    /// `@TB1`–`@TB20`
+    TrigonalBipyramidal(u8),
+    /// `@OH1`–`@OH30`
+    Octahedral(u8),
 }
 
 pub(super) fn read_bracket_atom(scanner: &mut Scanner<'_>) -> Result<BracketAtom, LexError> {
@@ -184,6 +184,21 @@ mod tests {
     }
 
     #[test]
+    fn isotope() {
+        for (smiles, expected) in [
+            ("[13C]", Some(13)),
+            // `H` here is the element, not a hydrogen count
+            ("[2H]", Some(2)),
+            ("[238U]", Some(238)),
+            ("[C]", None),
+            ("[2*]", Some(2)),
+        ] {
+            assert_eq!(bracket(smiles).isotope, expected, "{smiles}");
+        }
+        assert_eq!(bracket("[2H]").atomic_number, 1);
+    }
+
+    #[test]
     fn symbol() {
         let aromatic = |atomic_number| BracketAtom {
             aromatic: true,
@@ -209,21 +224,6 @@ mod tests {
         ] {
             assert_eq!(bracket(smiles), expected, "{smiles}");
         }
-    }
-
-    #[test]
-    fn isotope() {
-        for (smiles, expected) in [
-            ("[13C]", Some(13)),
-            // `H` here is the element, not a hydrogen count
-            ("[2H]", Some(2)),
-            ("[238U]", Some(238)),
-            ("[C]", None),
-            ("[2*]", Some(2)),
-        ] {
-            assert_eq!(bracket(smiles).isotope, expected, "{smiles}");
-        }
-        assert_eq!(bracket("[2H]").atomic_number, 1);
     }
 
     #[test]
