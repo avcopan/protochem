@@ -8,8 +8,8 @@ has a `README.md` (background, reading, step-by-step tasks) and Claude's spec
 |---|---|---|
 | T01 | `t01-setup-and-match/` | done |
 | T02 | `t02-enums-smiles-lexer/` | done |
-| T03 | `t03-ownership-zero-copy-lexer/` | ready |
-| T04 | collections and errors: `MolGraph` v0 | – |
+| T03 | `t03-ownership-zero-copy-lexer/` | done |
+| T04 | `t04-collections-errors-iterators/` | ready |
 | T05 | traits and generics: SMILES parser + `Follower` | – |
 | T06 | ~~iterators and closures~~: folded into T02 (syntax) and T04 (`neighbors`, `bfs_layers`) | – |
 | T07 | hashing and determinism: 1-WL color refinement | – |
