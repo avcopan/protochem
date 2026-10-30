@@ -70,7 +70,7 @@ pub struct Lexeme<'a> {
     pub token: Token,
     /// The token's text, borrowed from the input.
     pub text: &'a str,
-    /// Byt offset of `text` in the input.
+    /// Byte offset of `text` in the input.
     pub position: usize,
 }
 
@@ -124,6 +124,31 @@ impl fmt::Display for LexErrorKind {
 }
 
 /// An iterator over the lexemes of a SMILES string.
+///
+/// Each [`Lexeme`] borrows its `text` from the input and records its byte
+/// `position`. The lexer stops at the first whitespace, the end of the string,
+/// or after the first error.
+///
+/// # Examples
+///
+/// ```
+/// use protochem::smiles_lexer::Lexer;
+///
+/// let texts: Vec<_> = Lexer::new("[CH2]CO").map(|lexeme| lexeme.unwrap().text).collect();
+/// assert_eq!(texts, ["[CH2]", "C", "O"]);
+/// ```
+///
+/// Lexemes borrow from the input, so they can't outlive it:
+/// ```compile_fail,E0597
+/// use protochem::smiles_lexer::Lexer;
+///
+/// let lexemes: Vec<_> = {
+///     let smiles = String::from("[CH2]CO");
+///     Lexer::new(&smiles).collect()
+/// };
+/// // error: `lexemes` borrow from `smiles`, which has gone out of scope
+/// println!("{lexemes:?}");
+/// ```
 #[derive(Debug, Clone)]
 pub struct Lexer<'a> {
     scanner: Scanner<'a>,
@@ -131,7 +156,7 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    /// Initialize new lexer for `smiles`.
+    /// Create a lexer over `smiles`.
     #[must_use]
     pub fn new(smiles: &'a str) -> Self {
         let scanner = Scanner::new(smiles);
@@ -173,6 +198,8 @@ impl<'a> Iterator for Lexer<'a> {
 impl std::iter::FusedIterator for Lexer<'_> {}
 
 /// Split a SMILES string into tokens.
+///
+/// Use [`Lexer`] instead to obtain the text and positions of each lexeme.
 ///
 /// # Errors
 ///
