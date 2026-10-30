@@ -16,7 +16,8 @@ if [[ -n "$CONFLICTS" ]]; then
   echo "$CONFLICTS" | sed 's/^/  /'
   echo
   echo "Resolve them with 'git mergetool' (or edit the <<<<<<< / >>>>>>> markers by hand),"
-  echo "then commit the update with:"
+  echo "then check that no markers are left and commit the update with:"
+  echo "  ./scripts/conflicts.sh"
   echo "  git add --all"
   echo "  git commit -m \"$MSG\""
   if [[ "$(git config merge.tool || true)" == "vimdiff" ]]; then
