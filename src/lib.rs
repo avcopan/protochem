@@ -5,5 +5,7 @@ pub use element::Element;
 
 pub mod smiles_lexer;
 
+pub mod mol_graph;
+
 #[cfg(feature = "python")]
 mod python;
