@@ -71,7 +71,9 @@ impl AtomIndex {
 }
 ```
 
-and the same for `BondIndex`. `new` converts with `u32::try_from(index)` and
+and the same for `BondIndex`: also a single `u32`, the bond's position in the edge
+list (like petgraph's `EdgeIndex`), not its atom pair, which the graph stores in
+`bonds` (step 2). `new` converts with `u32::try_from(index)` and
 `expect`s. `index` is `self.0 as usize`. These two names are petgraph's
 (`NodeIndex::new`, `.index()`).
 
