@@ -73,7 +73,7 @@ impl AtomIndex {
 
 and the same for `BondIndex`: also a single `u32`, the bond's position in the edge
 list (like petgraph's `EdgeIndex`), not its atom pair, which the graph stores in
-`bonds` (step 2). `new` converts with `u32::try_from(index)` and
+`bond_atoms` (step 2). `new` converts with `u32::try_from(index)` and
 `expect`s. `index` is `self.0 as usize`. These two names are petgraph's
 (`NodeIndex::new`, `.index()`).
 
@@ -107,7 +107,7 @@ twins, which is what such a macro is for. The spec keeps them hand-written.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MolGraph {
     atomic_numbers: Vec<u8>,
-    bonds: Vec<[AtomIndex; 2]>,
+    bond_atoms: Vec<[AtomIndex; 2]>,
     adjacency: Vec<Vec<(AtomIndex, BondIndex)>>,
 }
 ```
@@ -200,7 +200,7 @@ Then, in this order:
      Write it, compare, and keep the `if let`. **Rule of thumb:** use a combinator when
      the result is a *value* you go on using. Use `if let`/`match` when the point is
      *control flow* (an early return).
-   - Then push `[a, b]` to `bonds` and `(b, bond)`/`(a, bond)` to the two adjacency
+   - Then push `[a, b]` to `bond_atoms` and `(b, bond)`/`(a, bond)` to the two adjacency
      lists.
 
 **Check** (on a graph with C0 and O1):

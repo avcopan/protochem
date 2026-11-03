@@ -27,7 +27,7 @@ use std::fmt;
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MolGraph {
     atomic_numbers: Vec<u8>,
-    bonds: Vec<[AtomIndex; 2]>,
+    bond_atoms: Vec<[AtomIndex; 2]>,
     adjacency: Vec<Vec<(AtomIndex, BondIndex)>>,
 }
 
@@ -92,8 +92,8 @@ impl MolGraph {
             return Err(GraphError::DuplicateBond(bond));
         }
 
-        let bond = BondIndex::new(self.bonds.len());
-        self.bonds.push([a, b]);
+        let bond = BondIndex::new(self.bond_atoms.len());
+        self.bond_atoms.push([a, b]);
         self.adjacency[a.index()].push((b, bond));
         self.adjacency[b.index()].push((a, bond));
         Ok(bond)
@@ -108,7 +108,7 @@ impl MolGraph {
     /// The number of bonds.
     #[must_use]
     pub fn bond_count(&self) -> usize {
-        self.bonds.len()
+        self.bond_atoms.len()
     }
 
     /// The atomic number of `atom`, or `None` if it's out of range.
@@ -120,7 +120,7 @@ impl MolGraph {
     /// The two atoms of `bond`, in the order they were added, or `None` if it's out of range.
     #[must_use]
     pub fn bond_atoms(&self, bond: BondIndex) -> Option<[AtomIndex; 2]> {
-        self.bonds.get(bond.index()).copied()
+        self.bond_atoms.get(bond.index()).copied()
     }
 
     /// The bond between `a` and `b`, if there is one.
