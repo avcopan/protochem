@@ -1,4 +1,5 @@
 //! A molecular graph with dense atom and bond indices.
+use std::fmt;
 
 /// An undirected molecular graph without self-loops or multiple bonds.
 ///
@@ -101,6 +102,30 @@ impl BondIndex {
     #[must_use]
     pub fn index(self) -> usize {
         self.0 as usize
+    }
+}
+
+/// An error from building a [`MolGraph`].
+#[non_exhaustive]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum GraphError {
+    /// The atom isn't in the graph.
+    AtomOutOfRange(AtomIndex),
+    /// A bond would join the atom to itself.
+    SelfLoop(AtomIndex),
+    /// The atoms are already joined by this bond.
+    DuplicateBond(BondIndex),
+}
+
+impl fmt::Display for GraphError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::AtomOutOfRange(atom) => write!(f, "atom {} is out of range", atom.index()),
+            Self::SelfLoop(atom) => write!(f, "atom {} can't be bonded to itself", atom.index()),
+            Self::DuplicateBond(bond) => {
+                write!(f, "bond {} already joins these atoms", bond.index())
+            }
+        }
     }
 }
 
