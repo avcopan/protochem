@@ -1,0 +1,25 @@
+{
+  // Format with rustfmt and Ruff on save, as the pre-commit hooks do. For Python, Zed
+  // runs the Ruff from the Pixi environment and also sorts imports when formatting.
+  "languages": {
+    "Rust": {
+      "format_on_save": "on"
+    },
+    "Python": {
+      "format_on_save": "on",
+      // Use ty instead of basedpyright for type checking and code navigation
+      "language_servers": ["ty", "ruff", "!basedpyright", "..."]
+    }
+  },
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        // Check with Clippy (including the pedantic lints from Cargo.toml) instead of
+        // `cargo check`, as `pixi run lint` does
+        "check": { "command": "clippy" },
+        // Enable the `python` feature, so that rust-analyzer also analyzes src/python.rs
+        "cargo": { "features": "all" }
+      }
+    }
+  }
+}
