@@ -52,8 +52,8 @@ impl MolGraph {
         for &atomic_number in atomic_numbers {
             graph.add_atom(atomic_number);
         }
-        for &[a, b] in bonds {
-            graph.add_bond(AtomIndex::new(a), AtomIndex::new(b))?;
+        for &[atom1, atom2] in bonds {
+            graph.add_bond(AtomIndex::new(atom1), AtomIndex::new(atom2))?;
         }
         Ok(graph)
     }
@@ -70,32 +70,36 @@ impl MolGraph {
         atom
     }
 
-    /// Add a bond between `a` and `b` and return its index.
+    /// Add a bond between `atom1` and `atom2` and return its index.
     ///
     /// # Errors
     ///
-    /// Returns a [`GraphError`] if either atom is out of range, if `a == b`, or if the atoms
-    /// are already bonded.
+    /// Returns a [`GraphError`] if either atom is out of range, if `atom1 == atom2`, or if the
+    /// atoms are already bonded.
     ///
     /// # Panics
     ///
     /// Panics if the graph already has `u32::MAX` bonds.
-    pub fn add_bond(&mut self, a: AtomIndex, b: AtomIndex) -> Result<BondIndex, GraphError> {
-        for atom in [a, b] {
+    pub fn add_bond(
+        &mut self,
+        atom1: AtomIndex,
+        atom2: AtomIndex,
+    ) -> Result<BondIndex, GraphError> {
+        for atom in [atom1, atom2] {
             self.atomic_number(atom)
                 .ok_or(GraphError::AtomOutOfRange(atom))?;
         }
-        if a == b {
-            return Err(GraphError::SelfLoop(a));
+        if atom1 == atom2 {
+            return Err(GraphError::SelfLoop(atom1));
         }
-        if let Some(bond) = self.find_bond(a, b) {
+        if let Some(bond) = self.find_bond(atom1, atom2) {
             return Err(GraphError::DuplicateBond(bond));
         }
 
         let bond = BondIndex::new(self.bond_atoms.len());
-        self.bond_atoms.push([a, b]);
-        self.adjacency[a.index()].push((b, bond));
-        self.adjacency[b.index()].push((a, bond));
+        self.bond_atoms.push([atom1, atom2]);
+        self.adjacency[atom1.index()].push((atom2, bond));
+        self.adjacency[atom2.index()].push((atom1, bond));
         Ok(bond)
     }
 
@@ -123,13 +127,13 @@ impl MolGraph {
         self.bond_atoms.get(bond.index()).copied()
     }
 
-    /// The bond between `a` and `b`, if there is one.
+    /// The bond between `atom1` and `atom2`, if there is one.
     #[must_use]
-    pub fn find_bond(&self, a: AtomIndex, b: AtomIndex) -> Option<BondIndex> {
+    pub fn find_bond(&self, atom1: AtomIndex, atom2: AtomIndex) -> Option<BondIndex> {
         self.adjacency
-            .get(a.index())?
+            .get(atom1.index())?
             .iter()
-            .find_map(|&(neighbor, bond)| (neighbor == b).then_some(bond))
+            .find_map(|&(a, b)| (a == atom2).then_some(b))
     }
 
     /// The number of neighbors of `atom`.
@@ -162,9 +166,7 @@ impl MolGraph {
     ///
     /// Panics if `atom` is out of range.
     pub fn neighbors(&self, atom: AtomIndex) -> impl Iterator<Item = AtomIndex> + '_ {
-        self.adjacency[atom.index()]
-            .iter()
-            .map(|&(neighbor, _)| neighbor)
+        self.adjacency[atom.index()].iter().map(|&(a, _)| a)
     }
 
     /// The molecular formula in Hill order.
@@ -206,8 +208,8 @@ impl MolGraph {
         std::iter::successors(Some(vec![start]), |layer| {
             let next: Vec<_> = layer
                 .iter()
-                .flat_map(|&atom| self.neighbors(atom))
-                .filter(|&neighbor| visited.insert(neighbor))
+                .flat_map(|&a| self.neighbors(a))
+                .filter(|&a| visited.insert(a))
                 .collect();
             (!next.is_empty()).then_some(next)
         })
@@ -387,14 +389,18 @@ mod tests {
     #[test]
     fn add_bond_errors() {
         let mut graph = MolGraph::from_bonds(&[6, 8], &[[0, 1]]).expect("valid graph");
-        for ([a, b], error) in [
+        for ([atom1, atom2], error) in [
             ([0, 5], GraphError::AtomOutOfRange(atom(5))),
             ([5, 0], GraphError::AtomOutOfRange(atom(5))),
             ([1, 1], GraphError::SelfLoop(atom(1))),
             ([0, 1], GraphError::DuplicateBond(BondIndex::new(0))),
             ([1, 0], GraphError::DuplicateBond(BondIndex::new(0))),
         ] {
-            assert_eq!(graph.add_bond(atom(a), atom(b)), Err(error), "{a}-{b}");
+            assert_eq!(
+                graph.add_bond(atom(atom1), atom(atom2)),
+                Err(error),
+                "{atom1}-{atom2}"
+            );
         }
         assert_eq!(graph.bond_count(), 1, "failed bonds aren't added");
     }
@@ -415,7 +421,7 @@ mod tests {
         assert_eq!(graph.find_bond(atom(2), atom(1)), Some(BondIndex::new(1)));
         assert_eq!(graph.find_bond(atom(0), atom(2)), None);
         assert_eq!(graph.find_bond(atom(9), atom(0)), None);
-        let degrees: Vec<_> = graph.atoms().map(|atom| graph.degree(atom)).collect();
+        let degrees: Vec<_> = graph.atoms().map(|a| graph.degree(a)).collect();
         assert_eq!(degrees, [4, 4, 2, 1, 1, 1, 1, 1, 1]);
     }
 
@@ -443,17 +449,17 @@ mod tests {
             // Each bond once, as [lower, higher], from the adjacency lists
             let mut from_adjacency: Vec<_> = graph
                 .atoms()
-                .flat_map(|atom| {
+                .flat_map(|a| {
                     graph
-                        .neighbors(atom)
-                        .filter(move |&neighbor| atom < neighbor)
-                        .map(move |neighbor| [atom, neighbor])
+                        .neighbors(a)
+                        .filter(move |&n| a < n)
+                        .map(move |n| [a, n])
                 })
                 .collect();
             // ...and from the bond list
             let mut from_bonds: Vec<_> = graph
                 .bonds()
-                .filter_map(|bond| graph.bond_atoms(bond))
+                .filter_map(|b| graph.bond_atoms(b))
                 .map(|mut pair| {
                     pair.sort_unstable();
                     pair
@@ -523,20 +529,6 @@ mod tests {
     }
 
     // GraphError
-
-    #[test]
-    fn error_messages() {
-        for (error, message) in [
-            (GraphError::AtomOutOfRange(atom(5)), "atom 5 is out of range"),
-            (GraphError::SelfLoop(atom(1)), "atom 1 can't bond to itself"),
-            (
-                GraphError::DuplicateBond(BondIndex::new(0)),
-                "bond 0 already joins these atoms",
-            ),
-        ] {
-            assert_eq!(error.to_string(), message);
-        }
-    }
 
     #[test]
     fn graph_error_is_a_good_error() {

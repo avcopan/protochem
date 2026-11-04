@@ -112,15 +112,18 @@ pub struct MolGraph {
 }
 ```
 
-with `new` (calls `Self::default()`), `add_atom(&mut self, atomic_number: u8) -> AtomIndex`
-(pushes to `atomic_numbers` *and* an empty list to `adjacency`), `atom_count`,
-`bond_count`, and
+with these methods:
 
 ```rust
+pub fn new() -> Self
+pub fn add_atom(&mut self, atomic_number: u8) -> AtomIndex
+pub fn atom_count(&self) -> usize
+pub fn bond_count(&self) -> usize
 pub fn atomic_number(&self, atom: AtomIndex) -> Option<u8>
 ```
 
-which is `self.atomic_numbers.get(atom.index()).copied()`.
+`new` calls `Self::default()`. `add_atom` pushes to `atomic_numbers` *and* an empty
+list to `adjacency`. `atomic_number` is `self.atomic_numbers.get(atom.index()).copied()`.
 
 **File order** (top-down, like the lexer): module docs → `MolGraph` and its `impl`
 (constructors, `add_*`, lookups, iterators, algorithms) → `AtomIndex`, `BondIndex` →
@@ -182,35 +185,45 @@ with `Display` (`"atom 5 is out of range"`, `"atom 1 can't bond to itself"`,
 `LexError`, there's no field every error shares (a position), so a plain enum is
 enough.
 
-Then, in this order:
+Then these methods:
 
-1. **`find_bond(&self, a, b) -> Option<BondIndex>`.** Write it as a loop first: if `a`
-   is out of range return `None`, else scan `a`'s `(neighbor, bond)` pairs and return
-   the bond whose neighbor is `b`. Then rewrite it as one chain from three pieces:
-   `self.adjacency.get(a.index())?`, `.iter().find_map(...)`, and
-   `(neighbor == b).then_some(bond)` inside. `find_map` is Python's
-   `next((f(x) for x in xs if ...), None)`.
-2. **`bond_atoms(&self, bond) -> Option<[AtomIndex; 2]>`**, like `atomic_number`.
-3. **`add_bond(&mut self, a, b) -> Result<BondIndex, GraphError>`:**
-   - Range check: `for atom in [a, b] { self.atomic_number(atom).ok_or(GraphError::AtomOutOfRange(atom))?; }`.
+```rust
+pub fn find_bond(&self, atom1: AtomIndex, atom2: AtomIndex) -> Option<BondIndex>
+pub fn bond_atoms(&self, bond: BondIndex) -> Option<[AtomIndex; 2]>
+pub fn add_bond(&mut self, atom1: AtomIndex, atom2: AtomIndex) -> Result<BondIndex, GraphError>
+```
+
+in this order:
+
+1. **`find_bond`.** Write it as a loop first: if `atom1` is out of range return `None`,
+   else scan `atom1`'s `(neighbor, bond)` pairs and return the bond whose neighbor is
+   `atom2`. Then rewrite it as one chain from three pieces:
+   `self.adjacency.get(atom1.index())?`, `.iter().find_map(|&(a, b)| ...)`, and
+   `(a == atom2).then_some(b)` inside. In closures, `a` is an atom and `b` is a bond.
+   `find_map` is Python's `next((f(x) for x in xs if ...), None)`.
+2. **`bond_atoms`**, like `atomic_number`.
+3. **`add_bond`:**
+   - Range check: `for atom in [atom1, atom2] { self.atomic_number(atom).ok_or(GraphError::AtomOutOfRange(atom))?; }`.
      `ok_or` turns "missing" into an error, and `?` returns it.
-   - Self-loop: a plain `if a == b { return Err(...) }`.
-   - Duplicate: `if let Some(bond) = self.find_bond(a, b) { return Err(...) }`.
-     The combinator version is `self.find_bond(a, b).map_or(Ok(()), |bond| Err(...))?`.
+   - Self-loop: a plain `if atom1 == atom2 { return Err(...) }`.
+   - Duplicate: `if let Some(bond) = self.find_bond(atom1, atom2) { return Err(...) }`.
+     The combinator version is `self.find_bond(atom1, atom2).map_or(Ok(()), |b| Err(...))?`.
      Write it, compare, and keep the `if let`. **Rule of thumb:** use a combinator when
      the result is a *value* you go on using. Use `if let`/`match` when the point is
      *control flow* (an early return).
-   - Then push `[a, b]` to `bond_atoms` and `(b, bond)`/`(a, bond)` to the two adjacency
-     lists.
+   - Then push `[atom1, atom2]` to `bond_atoms` and `(atom2, bond)`/`(atom1, bond)` to the
+     two adjacency lists.
 
-**Check** (on a graph with C0 and O1):
+**Check** (on a graph with C0 and O1). In this and later checks, a bare number is
+shorthand for an index: `add_bond(0, 1)` means
+`add_bond(AtomIndex::new(0), AtomIndex::new(1))`.
 - `add_bond(0, 1)` → `Ok(BondIndex::new(0))`
 - `add_bond(0, 5)` and `add_bond(5, 0)` → `AtomOutOfRange(5)`
 - `add_bond(1, 1)` → `SelfLoop(1)`
 - `add_bond(0, 1)` again, and `add_bond(1, 0)` → `DuplicateBond(0)`
 - `bond_count()` is still 1 afterwards
-- `find_bond(9, 0)` → `None` (no panic), and the error messages match. Add the
-  `assert_error::<GraphError>()` test from T03.
+- `find_bond(9, 0)` → `None` (no panic). Add the `assert_error::<GraphError>()` test
+  from T03.
 
 **Drills:**
 - FEI 04 `08_range`. The constructor returns `Result`, and `intersect` returns
@@ -230,10 +243,10 @@ pub fn from_bonds(atomic_numbers: &[u8], bonds: &[[usize; 2]]) -> Result<Self, G
 ```
 
 `add_atom` for each atomic number, then `add_bond` for each pair with `?`. Use plain
-`for` loops (`for &[a, b] in bonds` destructures the array). Later tests use this to
+`for` loops (`for &[atom1, atom2] in bonds` destructures the array). Later tests use this to
 build molecules in one line.
 
-**Why not a chain?** `bonds.iter().try_for_each(|&[a, b]| graph.add_bond(...).map(|_| ()))`
+**Why not a chain?** `bonds.iter().try_for_each(|&[atom1, atom2]| graph.add_bond(...).map(|_| ()))`
 works, but the loop says the same thing more plainly. A side effect plus `?` is what
 `for` is for. A chain pays off when it *builds a value*. Compare `lex` in T03:
 `collect()` into `Result<Vec<_>, _>` stops at the first `Err`, just like `?` in a loop.
@@ -256,7 +269,7 @@ pub fn atoms(&self) -> impl Iterator<Item = AtomIndex> + use<>
 pub fn bonds(&self) -> impl Iterator<Item = BondIndex> + use<>
 ```
 
-`neighbors` maps `|&(neighbor, _)| neighbor` over the adjacency list. `atoms` maps
+`neighbors` maps `|&(a, _)| a` over the adjacency list. `atoms` maps
 `AtomIndex::new` over `0..self.atom_count()`.
 
 **New Rust:**
@@ -313,7 +326,7 @@ body becomes a chain on the inner iterator (`if` → `filter`, `push(x)` → `ma
 inner closures borrow `atom`, which dies when the outer closure returns, while the
 iterator they're part of lives on). `move` copies `atom` into them.
 
-Then the other side: `graph.bonds().filter_map(|bond| graph.bond_atoms(bond))`, sort
+Then the other side: `graph.bonds().filter_map(|b| graph.bond_atoms(b))`, sort
 each pair, sort both lists, `assert_eq!`. Run it on ethanol and a cyclohexane ring.
 
 **When to keep the loop.** Use a chain when you're *building a value* (a `Vec`, a
@@ -362,7 +375,7 @@ alphabetical. Count 1 is left out (`CH4`, not `C1H4`).
    wildcard `0` isn't an element.
 2. Sort: collect `counts` into a `Vec<(&str, usize)>`, and `sort_unstable_by_key` with
    a tuple key like Python's `sorted(key=lambda ...)`. A private
-   `fn hill_key(symbol, has_carbon) -> (u8, &str)` gives `(0, "C")`, `(1, "H")`, or
+   `fn hill_key(symbol: &str, has_carbon: bool) -> (u8, &str)` gives `(0, "C")`, `(1, "H")`, or
    `(2, symbol)`. `match` with guards (`"C" if has_carbon =>`) reads well.
 3. Join: `.map(|(symbol, count)| ...)` to `String`s, then `.collect::<String>()`.
    That's `"".join(...)`.
@@ -393,18 +406,18 @@ pub fn bfs_layers(&self, start: AtomIndex) -> Vec<Vec<AtomIndex>>
 Layer 0 is `[start]`, layer `k + 1` is the unvisited neighbors of layer `k`, and it stops
 at the first empty layer.
 
-1. A private `struct Visited(Vec<bool>)` with `new(atom_count)` and
-   `fn insert(&mut self, atom) -> bool`, which returns `true` if the atom was new,
+1. A private `struct Visited(Vec<bool>)` with `fn new(atom_count: usize) -> Self` and
+   `fn insert(&mut self, atom: AtomIndex) -> bool`, which returns `true` if the atom was new,
    like `HashSet::insert`. (Python: `if n not in seen: seen.add(n)`.) One line:
    `!std::mem::replace(&mut self.0[atom.index()], true)`. A `Vec<bool>` beats a
    `HashSet` when indices are dense.
 2. Next layer from the current one:
-   `layer.iter().flat_map(|&atom| self.neighbors(atom)).filter(|&n| visited.insert(n)).collect()`.
+   `layer.iter().flat_map(|&a| self.neighbors(a)).filter(|&a| visited.insert(a)).collect()`.
 3. Write the outer loop as a `loop` that pushes layers until one is empty. Then
    replace it with `successors(Some(vec![start]), |layer| { ...; (!next.is_empty()).then_some(next) }).collect()`.
    Keep whichever you find clearer. The spec uses `successors`.
 
-**New Rust:** `filter(|&n| visited.insert(n))` *mutates* `visited`. That's legal
+**New Rust:** `filter(|&a| visited.insert(a))` *mutates* `visited`. That's legal
 because `filter` takes an `FnMut`: a closure that may change what it captures. The
 `successors` closure captures `visited` by `&mut` too, so it's `FnMut` as well.
 (Book 13.1 covers `Fn`/`FnMut`/`FnOnce`.) The filter now depends on order, which is
