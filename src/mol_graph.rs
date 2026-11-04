@@ -36,10 +36,44 @@ impl MolGraph {
     ///
     /// Panics if the new atom's index doesn't fit in a `u32`.
     pub fn add_atom(&mut self, atomic_number: u8) -> AtomIndex {
-        let index = self.atomic_numbers.len();
+        let atom = AtomIndex::new(self.atomic_numbers.len());
         self.atomic_numbers.push(atomic_number);
         self.adjacency.push(Vec::new());
-        AtomIndex::new(index)
+        atom
+    }
+
+    /// Add a bond between `atom1` and `atom2` and return its index.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`GraphError`] if either atom is out of range, if `atom1 == atom2`, or if the
+    /// atoms are already bonded.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new bond's index doesn't fit in a `u32`.
+    pub fn add_bond(
+        &mut self,
+        atom1: AtomIndex,
+        atom2: AtomIndex,
+    ) -> Result<BondIndex, GraphError> {
+        // Check for errors
+        for atom in [atom1, atom2] {
+            self.atomic_number(atom)
+                .ok_or(GraphError::AtomOutOfRange(atom))?;
+        }
+        if atom1 == atom2 {
+            return Err(GraphError::SelfLoop(atom1));
+        }
+        if let Some(bond) = self.find_bond(atom1, atom2) {
+            return Err(GraphError::DuplicateBond(bond));
+        }
+        // Add the bond
+        let bond = BondIndex::new(self.bond_atoms.len());
+        self.bond_atoms.push([atom1, atom2]);
+        self.adjacency[atom1.index()].push((atom2, bond));
+        self.adjacency[atom2.index()].push((atom1, bond));
+        Ok(bond)
     }
 
     /// The number of atoms.
@@ -58,6 +92,21 @@ impl MolGraph {
     #[must_use]
     pub fn atomic_number(&self, atom: AtomIndex) -> Option<u8> {
         self.atomic_numbers.get(atom.index()).copied()
+    }
+
+    /// The bond between `atom1` and `atom2`, if there is one.
+    #[must_use]
+    pub fn find_bond(&self, atom1: AtomIndex, atom2: AtomIndex) -> Option<BondIndex> {
+        self.adjacency
+            .get(atom1.index())?
+            .iter()
+            .find_map(|&(a, b)| (a == atom2).then_some(b))
+    }
+
+    /// The two atoms joined by `bond`, or `None` if it's out of range.
+    #[must_use]
+    pub fn bond_atoms(&self, bond: BondIndex) -> Option<[AtomIndex; 2]> {
+        self.bond_atoms.get(bond.index()).copied()
     }
 }
 
@@ -129,6 +178,8 @@ impl fmt::Display for GraphError {
     }
 }
 
+impl std::error::Error for GraphError {}
+
 fn to_u32(index: usize) -> u32 {
     u32::try_from(index).expect("index should be convertible to u32")
 }
@@ -171,6 +222,49 @@ mod tests {
         assert_eq!(graph.atomic_number(AtomIndex::new(2)), None);
     }
 
+    #[test]
+    fn add_bonds() {
+        let mut graph = MolGraph::new();
+        let atom1 = graph.add_atom(6);
+        let atom2 = graph.add_atom(8);
+        let bond = BondIndex::new(0);
+        // Normal use
+        assert_eq!(graph.add_bond(atom1, atom2), Ok(bond));
+        // Out of range
+        let missing_atom = AtomIndex::new(5);
+        assert_eq!(
+            graph.add_bond(atom1, missing_atom),
+            Err(GraphError::AtomOutOfRange(missing_atom))
+        );
+        assert_eq!(
+            graph.add_bond(missing_atom, atom2),
+            Err(GraphError::AtomOutOfRange(missing_atom))
+        );
+        // Self loop
+        assert_eq!(
+            graph.add_bond(atom1, atom1),
+            Err(GraphError::SelfLoop(atom1))
+        );
+        // Duplicate bond
+        assert_eq!(
+            graph.add_bond(atom1, atom2),
+            Err(GraphError::DuplicateBond(bond))
+        );
+        assert_eq!(
+            graph.add_bond(atom2, atom1),
+            Err(GraphError::DuplicateBond(bond))
+        );
+        // Other checks
+        assert_eq!(graph.find_bond(atom1, atom2), Some(bond));
+        assert_eq!(graph.find_bond(atom2, atom1), Some(bond));
+        assert_eq!(graph.find_bond(atom1, missing_atom), None);
+        assert_eq!(graph.find_bond(missing_atom, atom2), None);
+        assert_eq!(graph.find_bond(atom1, atom1), None);
+        assert_eq!(graph.bond_count(), 1);
+        assert_eq!(graph.bond_atoms(bond), Some([atom1, atom2]));
+        assert_eq!(graph.bond_atoms(BondIndex::new(1)), None);
+    }
+
     // AtomIndex, BondIndex
 
     #[test]
@@ -190,5 +284,13 @@ mod tests {
     #[cfg(target_pointer_width = "64")]
     fn index_too_large() {
         let _ = AtomIndex::new(u32::MAX as usize + 1);
+    }
+
+    // GraphError
+
+    #[test]
+    fn graph_error_is_a_good_error() {
+        fn assert_error<E: std::error::Error + Send + Sync + 'static>() {}
+        assert_error::<GraphError>();
     }
 }
