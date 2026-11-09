@@ -128,6 +128,39 @@ impl MolGraph {
     pub fn bond_atoms(&self, bond: BondIndex) -> Option<[AtomIndex; 2]> {
         self.bond_atoms.get(bond.index()).copied()
     }
+
+    /// Iterate over the neighbors of `atom`, in the order their bonds were added.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `atom` is out of range.
+    pub fn neighbors(&self, atom: AtomIndex) -> impl Iterator<Item = AtomIndex> + '_ {
+        self.adjacency[atom.index()].iter().map(|&(a, _)| a)
+    }
+
+    /// The number of neighbors of `atom`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `atom` is out of range.
+    #[must_use]
+    pub fn degree(&self, atom: AtomIndex) -> usize {
+        self.adjacency[atom.index()].len()
+    }
+
+    /// Iterate over the atom indices.
+    ///
+    /// The iterator doesn't borrow the graph, so you can add bonds while iterating.
+    pub fn atoms(&self) -> impl Iterator<Item = AtomIndex> + use<> {
+        (0..self.atomic_numbers.len()).map(AtomIndex::new)
+    }
+
+    /// Iterate over the bond indices.
+    ///
+    /// The iterator doesn't borrow the graph, so you can add bonds while iterating.
+    pub fn bonds(&self) -> impl Iterator<Item = BondIndex> + use<> {
+        (0..self.bond_atoms.len()).map(BondIndex::new)
+    }
 }
 
 /// The index of an atom in a [`MolGraph`].
@@ -298,6 +331,36 @@ mod tests {
     fn from_bonds_stops_at_first_error() {
         let result = MolGraph::from_bonds(&[6, 6], &[[0, 1], [1, 1], [0, 7]]);
         assert_eq!(result, Err(GraphError::SelfLoop(AtomIndex::new(1))));
+    }
+
+    #[test]
+    fn neighbors_and_degrees() {
+        // Ethanol with explicit hydrogens
+        let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
+        let bonds = [
+            [0, 1],
+            [1, 2],
+            [0, 3],
+            [0, 4],
+            [0, 5],
+            [1, 6],
+            [1, 7],
+            [2, 8],
+        ];
+        let graph = MolGraph::from_bonds(&atomic_numbers, &bonds).unwrap();
+        let neighbors: Vec<_> = graph.neighbors(AtomIndex::new(1)).collect();
+        assert_eq!(neighbors, [0, 2, 6, 7].map(AtomIndex::new));
+        let degrees: Vec<_> = graph.atoms().map(|atom| graph.degree(atom)).collect();
+        assert_eq!(degrees, [4, 4, 2, 1, 1, 1, 1, 1, 1]);
+    }
+
+    #[test]
+    fn atoms_does_not_borrow_the_graph() {
+        let mut graph = MolGraph::from_bonds(&[6, 6, 6], &[]).unwrap();
+        for atom in graph.atoms().skip(1) {
+            graph.add_bond(AtomIndex::new(0), atom).unwrap();
+        }
+        assert_eq!(graph.degree(AtomIndex::new(0)), 2);
     }
 
     // AtomIndex, BondIndex
