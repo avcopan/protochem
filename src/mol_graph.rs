@@ -30,6 +30,26 @@ impl MolGraph {
         Self::default()
     }
 
+    /// Create a graph from atomic numbers and bonds given as pairs of atom positions.
+    ///
+    /// # Errors
+    ///
+    /// Returns the first [`GraphError`] that [`add_bond`](Self::add_bond) hits.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a position doesn't fit in a `u32`.
+    pub fn from_bonds(atomic_numbers: &[u8], bonds: &[[usize; 2]]) -> Result<Self, GraphError> {
+        let mut g = Self::new();
+        for &atomic_number in atomic_numbers {
+            g.add_atom(atomic_number);
+        }
+        for &[atom1, atom2] in bonds {
+            g.add_bond(AtomIndex::new(atom1), AtomIndex::new(atom2))?;
+        }
+        Ok(g)
+    }
+
     /// Add an atom with the given atomic number and return its index.
     ///
     /// # Panics
@@ -111,6 +131,15 @@ impl MolGraph {
 }
 
 /// The index of an atom in a [`MolGraph`].
+///
+/// Atom and bond indices are different types, so they can't be mixed up:
+///
+/// ```compile_fail,E0308
+/// use protochem::mol_graph::{BondIndex, MolGraph};
+///
+/// let graph = MolGraph::from_bonds(&[6, 8], &[[0, 1]]).unwrap();
+/// let _ = graph.atomic_number(BondIndex::new(0));
+/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AtomIndex(u32);
 
@@ -263,6 +292,12 @@ mod tests {
         assert_eq!(graph.bond_count(), 1);
         assert_eq!(graph.bond_atoms(bond), Some([atom1, atom2]));
         assert_eq!(graph.bond_atoms(BondIndex::new(1)), None);
+    }
+
+    #[test]
+    fn from_bonds_stops_at_first_error() {
+        let result = MolGraph::from_bonds(&[6, 6], &[[0, 1], [1, 1], [0, 7]]);
+        assert_eq!(result, Err(GraphError::SelfLoop(AtomIndex::new(1))));
     }
 
     // AtomIndex, BondIndex
