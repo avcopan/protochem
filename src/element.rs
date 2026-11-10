@@ -72,6 +72,28 @@ impl Element {
     }
 }
 
+/// Return the chemical symbol for an atomic number, or `"*"` for the wildcard `0`.
+///
+/// Atomic number 0 stands for the SMILES wildcard atom `*`, which is not an
+/// [`Element`]. Returns `None` for atomic numbers past the end of the table.
+///
+/// # Examples
+///
+/// ```
+/// use protochem::element;
+///
+/// assert_eq!(element::symbol(17), Some("Cl"));
+/// assert_eq!(element::symbol(0), Some("*"));
+/// assert_eq!(element::symbol(200), None);
+/// ```
+#[must_use]
+pub fn symbol(atomic_number: u8) -> Option<&'static str> {
+    match atomic_number {
+        0 => Some("*"),
+        z => Element::from_atomic_number(z).map(|e| e.symbol),
+    }
+}
+
 /// Return the allowed valences of an element in the SMILES "organic subset".
 ///
 /// The organic subset contains the elements that may be written without square

@@ -1,4 +1,6 @@
 //! A molecular graph with dense atom and bond indices.
+use crate::element;
+use std::collections::HashMap;
 use std::fmt;
 
 /// An undirected molecular graph without self-loops or multiple bonds.
@@ -12,7 +14,7 @@ use std::fmt;
 /// use protochem::mol_graph::MolGraph;
 ///
 /// let mut graph = MolGraph::new();
-/// let oxygen = graph.add_atom(8);
+/// let oxygen = graph.add_atom(8).unwrap();
 /// assert_eq!(graph.atomic_number(oxygen), Some(8));
 /// assert_eq!(graph.atom_count(), 1);
 /// ```
@@ -34,7 +36,8 @@ impl MolGraph {
     ///
     /// # Errors
     ///
-    /// Returns the first [`GraphError`] that [`add_bond`](Self::add_bond) hits.
+    /// Returns the first [`GraphError`] that [`add_atom`](Self::add_atom) or
+    /// [`add_bond`](Self::add_bond) hits.
     ///
     /// # Panics
     ///
@@ -42,7 +45,7 @@ impl MolGraph {
     pub fn from_bonds(atomic_numbers: &[u8], bonds: &[[usize; 2]]) -> Result<Self, GraphError> {
         let mut g = Self::new();
         for &atomic_number in atomic_numbers {
-            g.add_atom(atomic_number);
+            g.add_atom(atomic_number)?;
         }
         for &[atom1, atom2] in bonds {
             g.add_bond(AtomIndex::new(atom1), AtomIndex::new(atom2))?;
@@ -52,14 +55,23 @@ impl MolGraph {
 
     /// Add an atom with the given atomic number and return its index.
     ///
+    /// The atomic number must be an element's or `0` for the wildcard (see
+    /// [`element::symbol`]).
+    ///
+    /// # Errors
+    ///
+    /// Returns [`GraphError::UnknownElement`] if `atomic_number` isn't `0` and isn't in the
+    /// element table.
+    ///
     /// # Panics
     ///
     /// Panics if the new atom's index doesn't fit in a `u32`.
-    pub fn add_atom(&mut self, atomic_number: u8) -> AtomIndex {
+    pub fn add_atom(&mut self, atomic_number: u8) -> Result<AtomIndex, GraphError> {
+        element::symbol(atomic_number).ok_or(GraphError::UnknownElement(atomic_number))?;
         let atom = AtomIndex::new(self.atomic_numbers.len());
         self.atomic_numbers.push(atomic_number);
         self.adjacency.push(Vec::new());
-        atom
+        Ok(atom)
     }
 
     /// Add a bond between `atom1` and `atom2` and return its index.
@@ -129,25 +141,6 @@ impl MolGraph {
         self.bond_atoms.get(bond.index()).copied()
     }
 
-    /// Iterate over the neighbors of `atom`, in the order their bonds were added.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `atom` is out of range.
-    pub fn neighbors(&self, atom: AtomIndex) -> impl Iterator<Item = AtomIndex> + '_ {
-        self.adjacency[atom.index()].iter().map(|&(a, _)| a)
-    }
-
-    /// The number of neighbors of `atom`.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `atom` is out of range.
-    #[must_use]
-    pub fn degree(&self, atom: AtomIndex) -> usize {
-        self.adjacency[atom.index()].len()
-    }
-
     /// Iterate over the atom indices.
     ///
     /// The iterator doesn't borrow the graph, so you can add bonds while iterating.
@@ -160,6 +153,100 @@ impl MolGraph {
     /// The iterator doesn't borrow the graph, so you can add bonds while iterating.
     pub fn bonds(&self) -> impl Iterator<Item = BondIndex> + use<> {
         (0..self.bond_atoms.len()).map(BondIndex::new)
+    }
+
+    /// The number of neighbors of `atom`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `atom` is out of range.
+    #[must_use]
+    pub fn degree(&self, atom: AtomIndex) -> usize {
+        self.adjacency[atom.index()].len()
+    }
+
+    /// Iterate over the neighbors of `atom`, in the order their bonds were added.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `atom` is out of range.
+    pub fn neighbors(&self, atom: AtomIndex) -> impl Iterator<Item = AtomIndex> + '_ {
+        self.adjacency[atom.index()].iter().map(|&(a, _)| a)
+    }
+
+    /// The chemical symbol of each atom, in atom order, with `"*"` for a wildcard.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::mol_graph::MolGraph;
+    ///
+    /// let graph = MolGraph::from_bonds(&[8, 1, 1, 0], &[[0, 1], [0, 2], [0, 3]]).unwrap();
+    /// assert_eq!(graph.symbols(), ["O", "H", "H", "*"]);
+    /// ```
+    #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "add_atom only accepts valid atomic numbers"
+    )]
+    pub fn symbols(&self) -> Vec<&'static str> {
+        self.atomic_numbers
+            .iter()
+            .copied()
+            .map(element::symbol)
+            .map(|s| s.expect("add_atom should only accept valid atomic numbers"))
+            .collect()
+    }
+
+    /// The molecular formula in Hill order.
+    ///
+    /// With carbon present, carbon comes first, then hydrogen, then the other symbols
+    /// alphabetically. Without carbon, every symbol is alphabetical, hydrogen included. A
+    /// count of 1 is left out, and wildcards are counted as `*`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::mol_graph::MolGraph;
+    ///
+    /// // Ethanol, CH3CH2OH
+    /// let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
+    /// let bonds = [[0, 1], [1, 2], [0, 3], [0, 4], [0, 5], [1, 6], [1, 7], [2, 8]];
+    /// let graph = MolGraph::from_bonds(&atomic_numbers, &bonds).unwrap();
+    /// assert_eq!(graph.formula(), "C2H6O");
+    ///
+    /// // Without carbon, hydrogen is sorted alphabetically
+    /// let graph = MolGraph::from_bonds(&[5, 1, 1, 1], &[[0, 1], [0, 2], [0, 3]]).unwrap();
+    /// assert_eq!(graph.formula(), "BH3");
+    /// ```
+    #[must_use]
+    pub fn formula(&self) -> String {
+        // count occurrences of each symbol
+        let mut counts: HashMap<&str, usize> = HashMap::new();
+        for symbol in self.symbols() {
+            *counts.entry(symbol).or_insert(0) += 1;
+        }
+        // sort the counts
+        let has_carbon = counts.contains_key("C");
+        let mut sorted_counts: Vec<(&str, usize)> = counts.into_iter().collect();
+        sorted_counts.sort_unstable_by_key(|c| hill_key(c.0, has_carbon));
+        // build formula
+        let mut formula = String::new();
+        for (symbol, count) in sorted_counts {
+            formula.push_str(symbol);
+            if count > 1 {
+                formula.push_str(&count.to_string());
+            }
+        }
+        formula
+    }
+}
+
+fn hill_key(symbol: &str, has_carbon: bool) -> (u8, &str) {
+    match symbol {
+        "C" if has_carbon => (0, "C"),
+        "H" if has_carbon => (1, "H"),
+        symbol => (2, symbol),
     }
 }
 
@@ -220,6 +307,8 @@ impl BondIndex {
 #[non_exhaustive]
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum GraphError {
+    /// The atomic number is invalid.
+    UnknownElement(u8),
     /// The atom isn't in the graph.
     AtomOutOfRange(AtomIndex),
     /// A bond would join the atom to itself.
@@ -231,6 +320,7 @@ pub enum GraphError {
 impl fmt::Display for GraphError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::UnknownElement(z) => write!(f, "{z} is not a valid atomic number"),
             Self::AtomOutOfRange(atom) => write!(f, "atom {} is out of range", atom.index()),
             Self::SelfLoop(atom) => write!(f, "atom {} can't be bonded to itself", atom.index()),
             Self::DuplicateBond(bond) => {
@@ -262,24 +352,44 @@ mod tests {
     #[test]
     fn add_atom_returns_consecutive_indices() {
         let mut graph = MolGraph::new();
-        assert_eq!(graph.add_atom(6), AtomIndex::new(0));
-        assert_eq!(graph.add_atom(8), AtomIndex::new(1));
+        assert_eq!(graph.add_atom(6), Ok(AtomIndex::new(0)));
+        assert_eq!(graph.add_atom(8), Ok(AtomIndex::new(1)));
         assert_eq!(graph.atom_count(), 2);
     }
 
     #[test]
     fn add_atom_adds_an_empty_adjacency_list() {
         let mut graph = MolGraph::new();
-        graph.add_atom(6);
-        graph.add_atom(8);
+        graph.add_atom(6).unwrap();
+        graph.add_atom(8).unwrap();
         assert_eq!(graph.adjacency, [Vec::new(), Vec::new()]);
+    }
+
+    #[test]
+    fn add_atom_accepts_the_wildcard() {
+        let mut graph = MolGraph::new();
+        let wildcard = graph.add_atom(0).unwrap();
+        assert_eq!(graph.atomic_number(wildcard), Some(0));
+    }
+
+    #[test]
+    fn add_atom_rejects_unknown_elements() {
+        let mut graph = MolGraph::new();
+        assert_eq!(graph.add_atom(200), Err(GraphError::UnknownElement(200)));
+        assert_eq!(graph.atom_count(), 0);
+    }
+
+    #[test]
+    fn from_bonds_rejects_unknown_elements() {
+        let result = MolGraph::from_bonds(&[6, 200], &[[0, 1]]);
+        assert_eq!(result, Err(GraphError::UnknownElement(200)));
     }
 
     #[test]
     fn atomic_number_lookup() {
         let mut graph = MolGraph::new();
-        graph.add_atom(6);
-        let oxygen = graph.add_atom(8);
+        graph.add_atom(6).unwrap();
+        let oxygen = graph.add_atom(8).unwrap();
         assert_eq!(graph.atomic_number(oxygen), Some(8));
         assert_eq!(graph.atomic_number(AtomIndex::new(2)), None);
     }
@@ -287,8 +397,8 @@ mod tests {
     #[test]
     fn add_bonds() {
         let mut graph = MolGraph::new();
-        let atom1 = graph.add_atom(6);
-        let atom2 = graph.add_atom(8);
+        let atom1 = graph.add_atom(6).unwrap();
+        let atom2 = graph.add_atom(8).unwrap();
         let bond = BondIndex::new(0);
         // Normal use
         assert_eq!(graph.add_bond(atom1, atom2), Ok(bond));
@@ -361,6 +471,29 @@ mod tests {
             graph.add_bond(AtomIndex::new(0), atom).unwrap();
         }
         assert_eq!(graph.degree(AtomIndex::new(0)), 2);
+    }
+
+    #[test]
+    fn formula() {
+        // Bonds don't affect the formula, so the graphs have none
+        for (atomic_numbers, expected) in [
+            (vec![], ""),
+            (vec![6, 1, 1, 1, 1], "CH4"),
+            (vec![6, 6, 8, 1, 1, 1, 1, 1, 1], "C2H6O"), // ethanol
+            (vec![17, 6, 1, 1, 1, 35], "CH3BrCl"),
+            (vec![0, 6], "C*"),
+            // Without carbon, everything is alphabetical
+            (vec![8, 1, 1], "H2O"),
+            (vec![11, 17], "ClNa"),
+            (vec![5, 1, 1, 1], "BH3"),
+        ] {
+            let graph = MolGraph::from_bonds(&atomic_numbers, &[]).unwrap();
+            assert_eq!(
+                graph.formula(),
+                expected,
+                "atomic numbers {atomic_numbers:?}"
+            );
+        }
     }
 
     // AtomIndex, BondIndex

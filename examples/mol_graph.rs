@@ -10,6 +10,7 @@ fn main() -> Result<(), GraphError> {
         let neighbors: Vec<_> = g.neighbors(AtomIndex::new(i)).collect();
         println!("neighbors: {neighbors:?}");
     }
+    println!("formula: {}", g.formula());
 
     Ok(())
 }
