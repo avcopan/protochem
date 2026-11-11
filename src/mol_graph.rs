@@ -26,6 +26,8 @@ pub struct MolGraph {
 }
 
 impl MolGraph {
+    // Constructors
+
     /// Create an empty graph.
     #[must_use]
     pub fn new() -> Self {
@@ -52,6 +54,8 @@ impl MolGraph {
         }
         Ok(g)
     }
+
+    // Mutators
 
     /// Add an atom with the given atomic number and return its index.
     ///
@@ -107,6 +111,8 @@ impl MolGraph {
         self.adjacency[atom2.index()].push((atom1, bond));
         Ok(bond)
     }
+
+    // Accessors and iterators
 
     /// The number of atoms.
     #[must_use]
@@ -174,6 +180,8 @@ impl MolGraph {
         self.adjacency[atom.index()].iter().map(|&(a, _)| a)
     }
 
+    // Derived properties
+
     /// The chemical symbol of each atom, in atom order, with `"*"` for a wildcard.
     ///
     /// # Examples
@@ -239,6 +247,46 @@ impl MolGraph {
             }
         }
         formula
+    }
+
+    // Algorithms
+
+    /// The atoms grouped by their distance from `start`.
+    ///
+    /// Layer 0 is `[start]`, and each later layer holds the neighbors of the layer before it
+    /// that haven't been seen yet. Within a layer, atoms are in the order the search found
+    /// them. Atoms that can't be reached from `start` are left out.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `start` is out of range.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::mol_graph::{AtomIndex, MolGraph};
+    ///
+    /// // Cyclohexane's carbon ring
+    /// let bonds = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
+    /// let graph = MolGraph::from_bonds(&[6; 6], &bonds).unwrap();
+    /// let layers = graph.bfs_layers(AtomIndex::new(0));
+    /// assert_eq!(layers.len(), 4);
+    /// assert_eq!(layers[1], [1, 5].map(AtomIndex::new));
+    /// assert_eq!(layers[3], [AtomIndex::new(3)]);
+    /// ```
+    #[must_use]
+    pub fn bfs_layers(&self, start: AtomIndex) -> Vec<Vec<AtomIndex>> {
+        let mut visited = Visited::new(self.atom_count());
+        visited.insert(start);
+        std::iter::successors(Some(vec![start]), |layer| {
+            let next: Vec<_> = layer
+                .iter()
+                .flat_map(|&a| self.neighbors(a))
+                .filter(|&a| visited.insert(a))
+                .collect();
+            (!next.is_empty()).then_some(next)
+        })
+        .collect()
     }
 }
 
@@ -332,6 +380,20 @@ impl fmt::Display for GraphError {
 
 impl std::error::Error for GraphError {}
 
+// The set of atoms a search has visited, as a `Vec<bool>` indexed by atom.
+struct Visited(Vec<bool>);
+
+impl Visited {
+    fn new(atom_count: usize) -> Self {
+        Self(vec![false; atom_count])
+    }
+
+    // Mark `atom` as visited and return `true` if it wasn't before, like `HashSet::insert`.
+    fn insert(&mut self, atom: AtomIndex) -> bool {
+        !std::mem::replace(&mut self.0[atom.index()], true)
+    }
+}
+
 fn to_u32(index: usize) -> u32 {
     u32::try_from(index).expect("index should be convertible to u32")
 }
@@ -339,6 +401,28 @@ fn to_u32(index: usize) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Ethanol with explicit hydrogens: C0-C1-O2, H3-H5 on C0, H6-H7 on C1, H8 on O2.
+    fn ethanol() -> MolGraph {
+        let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
+        let bonds = [
+            [0, 1],
+            [1, 2],
+            [0, 3],
+            [0, 4],
+            [0, 5],
+            [1, 6],
+            [1, 7],
+            [2, 8],
+        ];
+        MolGraph::from_bonds(&atomic_numbers, &bonds).unwrap()
+    }
+
+    // Cyclohexane's carbon ring, without hydrogens.
+    fn cyclohexane() -> MolGraph {
+        let bonds = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
+        MolGraph::from_bonds(&[6; 6], &bonds).unwrap()
+    }
 
     // MolGraph
 
@@ -445,19 +529,7 @@ mod tests {
 
     #[test]
     fn neighbors_and_degrees() {
-        // Ethanol with explicit hydrogens
-        let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
-        let bonds = [
-            [0, 1],
-            [1, 2],
-            [0, 3],
-            [0, 4],
-            [0, 5],
-            [1, 6],
-            [1, 7],
-            [2, 8],
-        ];
-        let graph = MolGraph::from_bonds(&atomic_numbers, &bonds).unwrap();
+        let graph = ethanol();
         let neighbors: Vec<_> = graph.neighbors(AtomIndex::new(1)).collect();
         assert_eq!(neighbors, [0, 2, 6, 7].map(AtomIndex::new));
         let degrees: Vec<_> = graph.atoms().map(|atom| graph.degree(atom)).collect();
@@ -494,6 +566,34 @@ mod tests {
                 "atomic numbers {atomic_numbers:?}"
             );
         }
+    }
+
+    #[test]
+    fn bfs_layers() {
+        let layers = |graph: &MolGraph, start: usize| -> Vec<Vec<usize>> {
+            graph
+                .bfs_layers(AtomIndex::new(start))
+                .into_iter()
+                .map(|layer| layer.into_iter().map(AtomIndex::index).collect())
+                .collect()
+        };
+        assert_eq!(
+            layers(&cyclohexane(), 0),
+            [vec![0], vec![1, 5], vec![2, 4], vec![3]]
+        );
+        assert_eq!(
+            layers(&ethanol(), 8),
+            [vec![8], vec![2], vec![1], vec![0, 6, 7], vec![3, 4, 5]]
+        );
+        // Unreachable atoms are left out
+        let unbonded = MolGraph::from_bonds(&[6, 6], &[]).unwrap();
+        assert_eq!(layers(&unbonded, 1), [vec![1]]);
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn bfs_layers_panics_out_of_range() {
+        let _ = cyclohexane().bfs_layers(AtomIndex::new(6));
     }
 
     // AtomIndex, BondIndex
