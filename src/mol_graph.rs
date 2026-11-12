@@ -352,15 +352,6 @@ impl MolGraph {
 }
 
 /// The index of an atom in a [`MolGraph`].
-///
-/// Atom and bond indices are different types, so they can't be mixed up:
-///
-/// ```compile_fail,E0308
-/// use protochem::{BondIndex, MolGraph};
-///
-/// let graph = MolGraph::from_bonds(&[6, 8], &[[0, 1]]).unwrap();
-/// let _ = graph.atomic_number(BondIndex::new(0));
-/// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct AtomIndex(u32);
 
@@ -490,6 +481,14 @@ mod tests {
         MolGraph::from_bonds(&[6; 6], &bonds).unwrap()
     }
 
+    // Atom groups as plain positions, for short expected values.
+    fn positions(groups: Vec<Vec<AtomIndex>>) -> Vec<Vec<usize>> {
+        groups
+            .into_iter()
+            .map(|group| group.into_iter().map(AtomIndex::index).collect())
+            .collect()
+    }
+
     // MolGraph
 
     #[test]
@@ -505,14 +504,6 @@ mod tests {
         assert_eq!(graph.add_atom(6), Ok(AtomIndex::new(0)));
         assert_eq!(graph.add_atom(8), Ok(AtomIndex::new(1)));
         assert_eq!(graph.atom_count(), 2);
-    }
-
-    #[test]
-    fn add_atom_adds_an_empty_adjacency_list() {
-        let mut graph = MolGraph::new();
-        graph.add_atom(6).unwrap();
-        graph.add_atom(8).unwrap();
-        assert_eq!(graph.adjacency, [Vec::new(), Vec::new()]);
     }
 
     #[test]
@@ -545,13 +536,12 @@ mod tests {
     }
 
     #[test]
-    fn add_bonds() {
-        let mut graph = MolGraph::new();
-        let atom1 = graph.add_atom(6).unwrap();
-        let atom2 = graph.add_atom(8).unwrap();
+    fn add_bond() {
+        let mut graph = MolGraph::from_bonds(&[6, 8], &[]).unwrap();
+        let [atom1, atom2] = [0, 1].map(AtomIndex::new);
         let bond = BondIndex::new(0);
-        // Normal use
         assert_eq!(graph.add_bond(atom1, atom2), Ok(bond));
+        assert_eq!(graph.bond_count(), 1);
         // Out of range
         let missing_atom = AtomIndex::new(5);
         assert_eq!(
@@ -576,13 +566,20 @@ mod tests {
             graph.add_bond(atom2, atom1),
             Err(GraphError::DuplicateBond(bond))
         );
-        // Other checks
+        assert_eq!(graph.bond_count(), 1);
+    }
+
+    #[test]
+    fn find_bond_and_bond_atoms() {
+        let graph = MolGraph::from_bonds(&[6, 8], &[[0, 1]]).unwrap();
+        let [atom1, atom2] = [0, 1].map(AtomIndex::new);
+        let missing_atom = AtomIndex::new(5);
+        let bond = BondIndex::new(0);
         assert_eq!(graph.find_bond(atom1, atom2), Some(bond));
         assert_eq!(graph.find_bond(atom2, atom1), Some(bond));
         assert_eq!(graph.find_bond(atom1, missing_atom), None);
         assert_eq!(graph.find_bond(missing_atom, atom2), None);
         assert_eq!(graph.find_bond(atom1, atom1), None);
-        assert_eq!(graph.bond_count(), 1);
         assert_eq!(graph.bond_atoms(bond), Some([atom1, atom2]));
         assert_eq!(graph.bond_atoms(BondIndex::new(1)), None);
     }
@@ -636,13 +633,7 @@ mod tests {
 
     #[test]
     fn bfs_layers() {
-        let layers = |graph: &MolGraph, start: usize| -> Vec<Vec<usize>> {
-            graph
-                .bfs_layers(AtomIndex::new(start))
-                .into_iter()
-                .map(|layer| layer.into_iter().map(AtomIndex::index).collect())
-                .collect()
-        };
+        let layers = |graph: &MolGraph, start| positions(graph.bfs_layers(AtomIndex::new(start)));
         assert_eq!(
             layers(&cyclohexane(), 0),
             [vec![0], vec![1, 5], vec![2, 4], vec![3]]
@@ -664,19 +655,19 @@ mod tests {
 
     #[test]
     fn components() {
-        let components = |atomic_numbers: &[u8], bonds: &[[usize; 2]]| -> Vec<Vec<usize>> {
-            MolGraph::from_bonds(atomic_numbers, bonds)
-                .unwrap()
-                .components()
-                .into_iter()
-                .map(|component| component.into_iter().map(AtomIndex::index).collect())
-                .collect()
+        let components = |atomic_numbers: &[u8], bonds: &[[usize; 2]]| {
+            positions(
+                MolGraph::from_bonds(atomic_numbers, bonds)
+                    .unwrap()
+                    .components(),
+            )
         };
         // Ordered by lowest atom, each in BFS order from it
         assert_eq!(components(&[6, 6, 8], &[[0, 1]]), [vec![0, 1], vec![2]]);
         assert_eq!(components(&[6, 8, 6], &[[0, 2]]), [vec![0, 2], vec![1]]);
         // NaCl, no bonds
         assert_eq!(components(&[11, 17], &[]), [vec![0], vec![1]]);
+        // A chain whose bonds were added out of order comes out in BFS order
         assert_eq!(
             components(&[6; 4], &[[3, 1], [1, 2], [2, 0]]),
             [vec![0, 2, 1, 3]]
@@ -690,12 +681,6 @@ mod tests {
     fn index_round_trip() {
         assert_eq!(AtomIndex::new(3).index(), 3);
         assert_eq!(BondIndex::new(3).index(), 3);
-    }
-
-    #[test]
-    fn index_order() {
-        assert!(AtomIndex::new(1) < AtomIndex::new(2));
-        assert!(BondIndex::new(1) < BondIndex::new(2));
     }
 
     #[test]

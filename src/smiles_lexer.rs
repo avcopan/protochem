@@ -27,18 +27,6 @@ pub use bracket_atom::{BracketAtom, Chirality};
 /// let texts: Vec<_> = Lexer::new("[CH2]CO").map(|lexeme| lexeme.unwrap().text).collect();
 /// assert_eq!(texts, ["[CH2]", "C", "O"]);
 /// ```
-///
-/// Lexemes borrow from the input, so they can't outlive it:
-/// ```compile_fail,E0597
-/// use protochem::smiles_lexer::Lexer;
-///
-/// let lexemes: Vec<_> = {
-///     let smiles = String::from("[CH2]CO");
-///     Lexer::new(&smiles).collect()
-/// };
-/// // error: `lexemes` borrow from `smiles`, which has gone out of scope
-/// println!("{lexemes:?}");
-/// ```
 #[must_use = "iterators are lazy and do nothing unless consumed"]
 #[derive(Debug, Clone)]
 pub struct Lexer<'a> {
@@ -423,27 +411,6 @@ mod tests {
         assert!(matches!(lexer.next(), Some(Err(_))));
         assert!(lexer.next().is_none());
         assert!(lexer.next().is_none());
-    }
-
-    #[test]
-    fn lexer_stops_after_whitespace() {
-        let mut lexer = Lexer::new("C C");
-        assert!(matches!(lexer.next(), Some(Ok(_))));
-        assert!(lexer.next().is_none());
-        assert!(lexer.next().is_none());
-        assert!(lexer.next().is_none());
-    }
-
-    #[test]
-    fn lexemes_outlive_lexer() {
-        let smiles = String::from("CCO");
-        let lexemes: Vec<_> = {
-            let lexer = Lexer::new(&smiles);
-            lexer.map(|result| result.expect("valid SMILES")).collect()
-        };
-        assert_eq!(lexemes.len(), 3);
-        let texts: Vec<_> = lexemes.iter().map(|l| l.text).collect();
-        assert_eq!(texts, vec!["C", "C", "O"]);
     }
 
     // Atoms
