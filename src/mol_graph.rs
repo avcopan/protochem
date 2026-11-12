@@ -277,6 +277,54 @@ impl MolGraph {
     #[must_use]
     pub fn bfs_layers(&self, start: AtomIndex) -> Vec<Vec<AtomIndex>> {
         let mut visited = Visited::new(self.atom_count());
+        self.layers_from(start, &mut visited).collect()
+    }
+
+    /// The connected components: groups of atoms joined to each other by a path of bonds.
+    ///
+    /// Components are ordered by their lowest atom, and each one lists its atoms in BFS
+    /// order from that atom, as in [`bfs_layers`](Self::bfs_layers) flattened. An atom with
+    /// no bonds is a component by itself, and an empty graph has no components.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::mol_graph::{AtomIndex, MolGraph};
+    ///
+    /// // A lone carbon atom, plus a water molecule
+    /// let graph = MolGraph::from_bonds(&[6, 8, 1, 1], &[[1, 2], [1, 3]]).unwrap();
+    /// let components = graph.components();
+    /// assert_eq!(components.len(), 2);
+    /// assert_eq!(components[0], [AtomIndex::new(0)]);
+    /// assert_eq!(components[1], [1, 2, 3].map(AtomIndex::new));
+    /// ```
+    #[must_use]
+    #[expect(
+        clippy::filter_map_bool_then,
+        reason = "`filter` then `map` would borrow `visited` in both closures, mutably in `map`"
+    )]
+    pub fn components(&self) -> Vec<Vec<AtomIndex>> {
+        let mut visited = Visited::new(self.atom_count());
+        self.atoms()
+            // Map `a` to its flattened BFS, recording the atoms as visited
+            .filter_map(|a| {
+                // Skip `a` if it was already visited
+                (!visited.contains(a))
+                    .then(|| self.layers_from(a, &mut visited).flatten().collect())
+            })
+            .collect()
+    }
+
+    /// The BFS layers from `start`, as in [`bfs_layers`](Self::bfs_layers), skipping atoms
+    /// already in `visited`.
+    ///
+    /// Marks `start` and every atom it reaches in `visited`, so a later call with the same
+    /// `visited` won't revisit them.
+    fn layers_from<'a>(
+        &'a self,
+        start: AtomIndex,
+        visited: &'a mut Visited,
+    ) -> impl Iterator<Item = Vec<AtomIndex>> + 'a {
         visited.insert(start);
         std::iter::successors(Some(vec![start]), |layer| {
             let next: Vec<_> = layer
@@ -286,15 +334,6 @@ impl MolGraph {
                 .collect();
             (!next.is_empty()).then_some(next)
         })
-        .collect()
-    }
-}
-
-fn hill_key(symbol: &str, has_carbon: bool) -> (u8, &str) {
-    match symbol {
-        "C" if has_carbon => (0, "C"),
-        "H" if has_carbon => (1, "H"),
-        symbol => (2, symbol),
     }
 }
 
@@ -380,7 +419,15 @@ impl fmt::Display for GraphError {
 
 impl std::error::Error for GraphError {}
 
-// The set of atoms a search has visited, as a `Vec<bool>` indexed by atom.
+fn hill_key(symbol: &str, has_carbon: bool) -> (u8, &str) {
+    match symbol {
+        "C" if has_carbon => (0, "C"),
+        "H" if has_carbon => (1, "H"),
+        symbol => (2, symbol),
+    }
+}
+
+/// The set of atoms a search has visited, as a `Vec<bool>` indexed by atom.
 struct Visited(Vec<bool>);
 
 impl Visited {
@@ -388,9 +435,14 @@ impl Visited {
         Self(vec![false; atom_count])
     }
 
-    // Mark `atom` as visited and return `true` if it wasn't before, like `HashSet::insert`.
+    /// Mark `atom` as visited and return `true` if it wasn't before.
     fn insert(&mut self, atom: AtomIndex) -> bool {
         !std::mem::replace(&mut self.0[atom.index()], true)
+    }
+
+    /// Return `true` if `atom` was visited.
+    fn contains(&self, atom: AtomIndex) -> bool {
+        self.0[atom.index()]
     }
 }
 
@@ -594,6 +646,28 @@ mod tests {
     #[should_panic(expected = "index out of bounds")]
     fn bfs_layers_panics_out_of_range() {
         let _ = cyclohexane().bfs_layers(AtomIndex::new(6));
+    }
+
+    #[test]
+    fn components() {
+        let components = |atomic_numbers: &[u8], bonds: &[[usize; 2]]| -> Vec<Vec<usize>> {
+            MolGraph::from_bonds(atomic_numbers, bonds)
+                .unwrap()
+                .components()
+                .into_iter()
+                .map(|component| component.into_iter().map(AtomIndex::index).collect())
+                .collect()
+        };
+        // Ordered by lowest atom, each in BFS order from it
+        assert_eq!(components(&[6, 6, 8], &[[0, 1]]), [vec![0, 1], vec![2]]);
+        assert_eq!(components(&[6, 8, 6], &[[0, 2]]), [vec![0, 2], vec![1]]);
+        // NaCl, no bonds
+        assert_eq!(components(&[11, 17], &[]), [vec![0], vec![1]]);
+        assert_eq!(
+            components(&[6; 4], &[[3, 1], [1, 2], [2, 0]]),
+            [vec![0, 2, 1, 3]]
+        );
+        assert_eq!(components(&[], &[]), Vec::<Vec<usize>>::new());
     }
 
     // AtomIndex, BondIndex
