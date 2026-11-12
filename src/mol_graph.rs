@@ -1,4 +1,15 @@
 //! A molecular graph with dense atom and bond indices.
+//!
+//! A [`MolGraph`] stores an atomic number for each atom and the pair of atoms for each
+//! bond. Nothing else is stored: bond orders, charges and stereo go in separate tables,
+//! indexed by [`AtomIndex`] and [`BondIndex`].
+//!
+//! Atoms and bonds are numbered from 0 in the order they're added. The two index types are
+//! different, so an atom index can't be passed where a bond index is expected. Lookups
+//! that take an index return `None` if it's out of range. The neighbor and degree queries
+//! and the algorithms panic instead.
+//!
+//! [`MolGraph::bfs_layers`] and [`MolGraph::components`] are the graph algorithms.
 use crate::element;
 use std::collections::HashMap;
 use std::fmt;
@@ -11,12 +22,15 @@ use std::fmt;
 /// # Examples
 ///
 /// ```
-/// use protochem::mol_graph::MolGraph;
+/// use protochem::{AtomIndex, MolGraph};
 ///
-/// let mut graph = MolGraph::new();
-/// let oxygen = graph.add_atom(8).unwrap();
-/// assert_eq!(graph.atomic_number(oxygen), Some(8));
-/// assert_eq!(graph.atom_count(), 1);
+/// // Ethanol's heavy atoms: C0-C1-O2
+/// let graph = MolGraph::from_bonds(&[6, 6, 8], &[[0, 1], [1, 2]]).unwrap();
+/// let neighbors: Vec<_> = graph.neighbors(AtomIndex::new(1)).collect();
+/// assert_eq!(neighbors, [AtomIndex::new(0), AtomIndex::new(2)]);
+///
+/// // The formula counts only the atoms in the graph, so the hydrogens are missing
+/// assert_eq!(graph.formula(), "C2O");
 /// ```
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct MolGraph {
@@ -187,7 +201,7 @@ impl MolGraph {
     /// # Examples
     ///
     /// ```
-    /// use protochem::mol_graph::MolGraph;
+    /// use protochem::MolGraph;
     ///
     /// let graph = MolGraph::from_bonds(&[8, 1, 1, 0], &[[0, 1], [0, 2], [0, 3]]).unwrap();
     /// assert_eq!(graph.symbols(), ["O", "H", "H", "*"]);
@@ -215,7 +229,7 @@ impl MolGraph {
     /// # Examples
     ///
     /// ```
-    /// use protochem::mol_graph::MolGraph;
+    /// use protochem::MolGraph;
     ///
     /// // Ethanol, CH3CH2OH
     /// let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
@@ -264,7 +278,7 @@ impl MolGraph {
     /// # Examples
     ///
     /// ```
-    /// use protochem::mol_graph::{AtomIndex, MolGraph};
+    /// use protochem::{AtomIndex, MolGraph};
     ///
     /// // Cyclohexane's carbon ring
     /// let bonds = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
@@ -289,7 +303,7 @@ impl MolGraph {
     /// # Examples
     ///
     /// ```
-    /// use protochem::mol_graph::{AtomIndex, MolGraph};
+    /// use protochem::{AtomIndex, MolGraph};
     ///
     /// // A lone carbon atom, plus a water molecule
     /// let graph = MolGraph::from_bonds(&[6, 8, 1, 1], &[[1, 2], [1, 3]]).unwrap();
@@ -342,7 +356,7 @@ impl MolGraph {
 /// Atom and bond indices are different types, so they can't be mixed up:
 ///
 /// ```compile_fail,E0308
-/// use protochem::mol_graph::{BondIndex, MolGraph};
+/// use protochem::{BondIndex, MolGraph};
 ///
 /// let graph = MolGraph::from_bonds(&[6, 8], &[[0, 1]]).unwrap();
 /// let _ = graph.atomic_number(BondIndex::new(0));
