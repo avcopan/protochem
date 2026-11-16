@@ -22,7 +22,7 @@ pub use bracket_atom::{BracketAtom, Chirality};
 /// # Examples
 ///
 /// ```
-/// use protochem::smiles_lexer::Lexer;
+/// use protochem::smiles::lexer::Lexer;
 ///
 /// let texts: Vec<_> = Lexer::new("[CH2]CO").map(|lexeme| lexeme.unwrap().text).collect();
 /// assert_eq!(texts, ["[CH2]", "C", "O"]);
@@ -100,7 +100,7 @@ pub struct Lexeme<'a> {
 /// # Examples
 ///
 /// ```
-/// use protochem::smiles_lexer::{lex, Atom, LexErrorKind, Token};
+/// use protochem::smiles::lexer::{lex, Atom, LexErrorKind, Token};
 ///
 /// let tokens = lex("CO").expect("valid SMILES");
 /// let carbon = Atom { atomic_number: 6, aromatic: false };
