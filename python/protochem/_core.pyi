@@ -5,7 +5,7 @@ Its type stubs (`_core.pyi`) are generated from this module by `pixi run stubs`,
 includes these doc comments as docstrings, so they use Python's (Google) docstring style.
 """
 
-from typing import Final, final
+from typing import Final, SupportsIndex, final
 
 __all__ = ["__version__", "Element", "implicit_hydrogens", "organic_valences"]
 
@@ -28,7 +28,7 @@ class Element:
         The atomic number.
         """
     @staticmethod
-    def from_atomic_number(atomic_number: int) -> Element | None:
+    def from_atomic_number(atomic_number: SupportsIndex) -> Element | None:
         """
         Look up an element by atomic number.
 
@@ -57,7 +57,9 @@ class Element:
         The chemical symbol.
         """
 
-def implicit_hydrogens(atomic_number: int, bond_order_sum: int) -> int | None:
+def implicit_hydrogens(
+    atomic_number: SupportsIndex, bond_order_sum: SupportsIndex
+) -> int | None:
     """
     Return the number of implicit hydrogens on an organic-subset atom without brackets.
 
@@ -73,7 +75,7 @@ def implicit_hydrogens(atomic_number: int, bond_order_sum: int) -> int | None:
         subset.
     """
 
-def organic_valences(atomic_number: int) -> list[int]:
+def organic_valences(atomic_number: SupportsIndex) -> list[int]:
     """
     Return the allowed valences of an element in the SMILES organic subset.
 

@@ -1,6 +1,12 @@
+//! Python bindings for the `protochem` library.
+//!
+//! This crate only wraps the public API of the library for Python.
+
 // The docstrings below are Python's (Google style), whose `Args:` entries name
 // parameters without backticks
 #![allow(clippy::doc_markdown)]
+// This crate is not published to crates.io, so it does not need the crates.io metadata
+#![allow(clippy::cargo_common_metadata)]
 
 use pyo3::prelude::*;
 
@@ -13,7 +19,7 @@ mod _core {
     // Import the prelude again, since `use` does not carry into child modules.
     use pyo3::prelude::*;
 
-    use crate::element;
+    use protochem::element;
 
     /// The package version.
     #[pymodule_export]

@@ -48,11 +48,21 @@ test = { cmd = "pytest", default-environment = "test" }
 [feature.lowest]
 solve-strategy = "lowest"
 
-# Data packages that should always be recent, even when testing lowest versions
-# (other packages depend on them without lower bounds)
+# Floors for packages that other packages depend on without (adequate) lower bounds
 [feature.lowest.constraints]
+# Data packages that should always be recent
 ca-certificates = ">=2026.10.18"
 tzdata = ">=2026c"
+# Older typing-extensions releases break on Python 3.13 (e.g. pydantic fails to import)
+typing-extensions = ">=4.12"
+# The oldest libstdcxx-ng packages ship a libstdc++.so.6 that shadows the newer one from
+# libstdcxx, so C++ packages fail with "GLIBCXX_3.4.31 not found"
+libstdcxx-ng = ">=13"
+
+# Only use PyPI wheels: unbounded transitive PyPI dependencies would otherwise resolve
+# to ancient source-only releases that fail to build
+[feature.lowest.pypi-options]
+no-build = true
 
 [feature.dev.dependencies]
 # Rust toolchain
@@ -91,7 +101,7 @@ great-docs = ">=0.17.0"
 CARGO_TARGET_DIR = "$PIXI_PROJECT_ROOT/target/dev"
 # Build PyO3 as for an extension module, which leaves Python's symbols to the interpreter
 # instead of linking libpython (the Pixi Python ships without it), so that Cargo builds
-# with the `python` feature (`--all-features`, as rust-analyzer's Run buttons use) link
+# of the Python bindings (`--workspace`, as rust-analyzer's Run buttons use) link
 PYO3_BUILD_EXTENSION_MODULE = "1"
 
 [feature.dev.tasks]
@@ -107,11 +117,11 @@ test-lowest = "pixi run -e test-lowest test"
 # Check for merge conflict markers (lefthook.yaml runs the script directly, which also
 # works when pixi.toml itself has conflicts)
 conflicts = "./scripts/conflicts.sh"
-stubs = "maturin generate-stubs --out python && ruff format python/protochem/_core.pyi"  # see src/python.rs
-fmt = "cargo fmt && ruff format ."
-lint = "cargo clippy --locked --all-targets --all-features -- -D warnings && ruff check . --fix"
+stubs = "maturin generate-stubs --out python && ruff format python/protochem/_core.pyi"  # see py-protochem/src/lib.rs
+fmt = "cargo fmt --all && ruff format ."
+lint = "cargo clippy --locked --workspace --all-targets -- -D warnings && ruff check . --fix"
 types = "ty check"
-test-rs = "cargo test --locked"
+test-rs = "cargo test --locked"  # the Rust library (the bindings are tested by pytest)
 workflows = "actionlint"  # lint the GitHub Actions workflows
 # Run pre-commit hooks (see lefthook.yaml)
 pre-commit = "lefthook run pre-commit --all-files"

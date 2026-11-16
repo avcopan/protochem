@@ -190,7 +190,7 @@ Configured in `Cargo.toml` (`[lints]`), so `pixi run lint` covers them:
 
 ## This template's layout
 
-- **Python bindings** (`src/python.rs`) follow Python conventions (Google
+- **Python bindings** (`py-<package_name>/src/lib.rs`) follow Python conventions (Google
   docstrings, `snake_case` functions, `__version__`), not these guidelines.
   Review the Rust API and the Python API separately.
 - **Crate docs** come from `CRATE.md` (included by `lib.rs`), which is also the

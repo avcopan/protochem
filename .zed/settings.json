@@ -7,8 +7,9 @@
     },
     "Python": {
       "format_on_save": "on",
-      // Use ty instead of basedpyright for type checking and code navigation
-      "language_servers": ["ty", "ruff", "!basedpyright", "..."]
+      // Use only ty (types, navigation) and Ruff. No "...": it would re-enable basedpyright,
+      // pyrefly, pyright and pylsp, because this list replaces the default one
+      "language_servers": ["ty", "ruff"]
     }
   },
   "lsp": {
@@ -16,9 +17,7 @@
       "initialization_options": {
         // Check with Clippy (including the pedantic lints from Cargo.toml) instead of
         // `cargo check`, as `pixi run lint` does
-        "check": { "command": "clippy" },
-        // Enable the `python` feature, so that rust-analyzer also analyzes src/python.rs
-        "cargo": { "features": "all" }
+        "check": { "command": "clippy" }
       }
     }
   }

@@ -1,43 +1,46 @@
-[package]
-name = "protochem"
+# The workspace holds two crates: the Rust library (this package, in src/) and its Python
+# bindings (py-protochem/), which are kept separate so that the library does not
+# depend on Python
+[workspace]
+members = ["py-protochem"]
+
+# Settings shared by both crates
+[workspace.package]
 version = "0.0.2"
 edition = "2024"
-description = "Rust learning sandbox for implementing cheminformatics algorithms"
 license = "MIT"
 repository = "https://github.com/avcopan/protochem"
+
+[package]
+name = "protochem"
+version.workspace = true
+edition.workspace = true
+description = "Rust learning sandbox for implementing cheminformatics algorithms"
+license.workspace = true
+repository.workspace = true
 homepage = "https://avcopan.github.io/protochem/"
 keywords = ["chemistry", "graph", "stereochemistry", "cheminformatics"]
 categories = ["science::computational-chemistry::cheminformatics"]
 readme = "CRATE.md"  # the crates.io page, also the crate docs (see src/lib.rs)
-# Files to include when publishing to crates.io (the Python package is not needed there)
+# Files to include when publishing to crates.io (the Python bindings and package are not
+# needed there)
 include = ["/src", "/Cargo.toml", "/Cargo.lock", "/CRATE.md", "/LICENSE"]
 
-[lib]
-# cdylib: the compiled Python extension module (built by maturin)
-# rlib: a plain Rust library, for use by other Rust crates (and by `cargo test`)
-crate-type = ["cdylib", "rlib"]
+[lints]
+workspace = true  # the lints below
 
-[features]
-# Python bindings, enabled by maturin (see `tool.maturin` in pyproject.toml).
-# These are off by default, so that the plain Rust library does not depend on Python.
-python = ["dep:pyo3"]
-
-[dependencies]
-# Python-only dependencies are optional and enabled by the `python` feature above.
-# PyO3's experimental-inspect feature lets maturin generate the type stubs (see pixi.toml).
-pyo3 = { version = "0.29", features = ["abi3-py313", "experimental-inspect"], optional = true }
-
-# Compiler and Clippy lints (see the Rust API Guidelines, https://rust-lang.github.io/api-guidelines/)
-[lints.rust]
+# Compiler and Clippy lints for both crates (see the Rust API Guidelines,
+# https://rust-lang.github.io/api-guidelines/)
+[workspace.lints.rust]
 missing_docs = "warn"  # C-CRATE-DOC, C-EXAMPLE
 missing_debug_implementations = "warn"  # C-DEBUG
 rust_2018_idioms = { level = "warn", priority = -1 }  # explicit `'_` in paths
 
-[lints.clippy]
+[workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 cargo_common_metadata = "warn"  # C-METADATA
 
-# Optimizations for release builds
+# Optimizations for release builds (of both crates)
 [profile.release]
 lto = true
 codegen-units = 1

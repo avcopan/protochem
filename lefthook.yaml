@@ -13,6 +13,8 @@ pre-commit:
       run: pixi run -e dev local stop
       tags: [check]
 
+    # Regenerates the type stub. If the committed stub was out of date, 10-check-clean
+    # then fails, which is how CI catches a stale stub.
     2-stubs:
       run: pixi run -e dev stubs
       tags: [check]

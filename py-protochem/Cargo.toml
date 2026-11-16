@@ -1,0 +1,21 @@
+# The Python bindings of the protochem library, compiled by maturin into the Python
+# extension module `protochem._core` (see `tool.maturin` in pyproject.toml)
+[package]
+name = "py-protochem"
+version.workspace = true
+edition.workspace = true
+description = "Python bindings for protochem"
+license.workspace = true
+repository.workspace = true
+publish = false  # released as a Python package (PyPI, Conda), not on crates.io
+
+[lib]
+crate-type = ["cdylib"]  # a shared library that Python can load
+
+[dependencies]
+protochem = { path = ".." }
+# PyO3's experimental-inspect feature lets maturin generate the type stubs (see pixi.toml).
+pyo3 = { version = "0.30", features = ["abi3-py313", "experimental-inspect"] }
+
+[lints]
+workspace = true

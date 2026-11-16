@@ -6,8 +6,6 @@
     "editor.formatOnSave": true
   },
   "rust-analyzer.check.command": "clippy",
-  // Enable the `python` feature, so that rust-analyzer also analyzes src/python.rs
-  "rust-analyzer.cargo.features": "all",
 
   // Python: format with Ruff on save, using the Ruff from the Pixi environment
   "[python]": {
