@@ -36,6 +36,9 @@ test = { features = ["test"], solve-group = "default"}
 dev = { features = ["dev", "test"], solve-group = "default"}
 # Test with the lowest versions allowed by the lower bounds on the dependencies
 test-lowest = { features = ["test", "lowest"] }
+# Test against reference implementations (see tests/oracle/), solved on its own so that
+# these packages don't constrain the other environments
+oracle = { features = ["test", "oracle"] }
 
 [feature.test.dependencies]
 pytest = ">=9.1.1"
@@ -43,6 +46,17 @@ pytest-cov = ">=7.1.0"
 
 [feature.test.tasks]
 test = { cmd = "pytest", default-environment = "test" }
+
+# Reference implementations for the oracle tests (test tools, so kept at recent versions)
+[feature.oracle.dependencies]
+rdkit = ">=2026.9.2"
+networkx = ">=3.7"
+
+[feature.oracle.pypi-dependencies]
+stereomolgraph = ">=0.0.22b0"  # not on conda-forge
+
+[feature.oracle.tasks]
+oracle = { cmd = "pytest tests/oracle", default-environment = "oracle" }
 
 # Solve to the lowest versions allowed by the dependency specs (see test-lowest above)
 [feature.lowest]
