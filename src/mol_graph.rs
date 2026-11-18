@@ -1,8 +1,8 @@
 //! A molecular graph with dense atom and bond indices.
 //!
-//! A [`MolGraph`] stores an atomic number for each atom and the pair of atoms for each
-//! bond. Nothing else is stored: bond orders, charges and stereo go in separate tables,
-//! indexed by [`AtomIndex`] and [`BondIndex`].
+//! A [`MolGraph`] stores an atomic number for each atom, the pair of atoms for each bond,
+//! and the species' net charge and spin. Nothing else is stored: bond orders, atom charges
+//! and stereo go in separate tables, indexed by [`AtomIndex`] and [`BondIndex`].
 //!
 //! Atoms and bonds are numbered from 0 in the order they're added. The two index types are
 //! different, so an atom index can't be passed where a bond index is expected. Lookups
@@ -16,8 +16,9 @@ use std::fmt;
 
 /// An undirected molecular graph without self-loops or multiple bonds.
 ///
-/// Atoms carry an atomic number. Bonds carry nothing: bond orders, charges and
-/// stereo belong in separate tables indexed by [`AtomIndex`] and [`BondIndex`].
+/// Atoms carry an atomic number. Bonds carry nothing: bond orders, atom charges and
+/// stereo belong in separate tables indexed by [`AtomIndex`] and [`BondIndex`]. The graph
+/// also stores the species' net [`charge`](Self::charge) and [`spin`](Self::spin).
 ///
 /// # Examples
 ///
@@ -37,6 +38,8 @@ pub struct MolGraph {
     atomic_numbers: Vec<u8>,
     bond_atoms: Vec<[AtomIndex; 2]>,
     adjacency: Vec<Vec<(AtomIndex, BondIndex)>>,
+    charge: i8,
+    spin: u8,
 }
 
 impl MolGraph {
@@ -129,6 +132,18 @@ impl MolGraph {
         Ok(bond)
     }
 
+    /// Set the molecular charge.
+    pub fn set_charge(&mut self, charge: i8) {
+        self.charge = charge;
+    }
+
+    /// Set the spin, 2S = multiplicity - 1.
+    ///
+    /// For a high-spin open-shell species, this is the number of unpaired electrons.
+    pub fn set_spin(&mut self, spin: u8) {
+        self.spin = spin;
+    }
+
     // Accessors and iterators
 
     /// The number of atoms.
@@ -147,6 +162,20 @@ impl MolGraph {
     #[must_use]
     pub fn atomic_number(&self, atom: AtomIndex) -> Option<u8> {
         self.atomic_numbers.get(atom.index()).copied()
+    }
+
+    /// The molecular charge.
+    #[must_use]
+    pub fn charge(&self) -> i8 {
+        self.charge
+    }
+
+    /// The spin, 2S = multiplicity - 1.
+    ///
+    /// For a high-spin open-shell species, this is the number of unpaired electrons.
+    #[must_use]
+    pub fn spin(&self) -> u8 {
+        self.spin
     }
 
     /// The bond between `atom1` and `atom2`, if there is one.
@@ -678,6 +707,17 @@ mod tests {
             [vec![0, 2, 1, 3]]
         );
         assert_eq!(components(&[], &[]), Vec::<Vec<usize>>::new());
+    }
+
+    #[test]
+    fn charge_and_spin() {
+        let mut graph = ethanol();
+        assert_eq!((graph.charge(), graph.spin()), (0, 0));
+        graph.set_charge(-1);
+        graph.set_spin(1);
+        assert_eq!((graph.charge(), graph.spin()), (-1, 1));
+        // They're part of the species, so they count in `==`
+        assert_ne!(graph, ethanol());
     }
 
     // AtomIndex, BondIndex
