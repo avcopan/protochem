@@ -131,11 +131,11 @@ fn read_chirality(scanner: &mut Scanner<'_>) -> Result<Option<Chirality>, LexErr
     };
     // Handle TH, AL, SP, TB, OH
     let start = scanner.cursor;
-    let n = read_number(scanner)?.ok_or_else(|| scanner.unexpected())?;
-    if !(1..=max).contains(&n) {
+    let number = read_number(scanner)?.ok_or_else(|| scanner.unexpected())?;
+    if !(1..=max).contains(&number) {
         return Err(LexError::new(start, LexErrorKind::NumberOutOfRange));
     }
-    Ok(Some(make(n)))
+    Ok(Some(make(number)))
 }
 
 fn read_charge(scanner: &mut Scanner<'_>) -> Result<i8, LexError> {
@@ -149,7 +149,7 @@ fn read_charge(scanner: &mut Scanner<'_>) -> Result<i8, LexError> {
         let start = scanner.cursor;
         match read_number::<i8>(scanner)? {
             None => 1,
-            Some(n) if n <= 15 => n,
+            Some(number) if number <= 15 => number,
             Some(_) => return Err(LexError::new(start, LexErrorKind::NumberOutOfRange)),
         }
     };

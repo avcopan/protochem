@@ -59,14 +59,14 @@ impl MolGraph {
     ///
     /// Panics if a position doesn't fit in a `u32`.
     pub fn from_bonds(atomic_numbers: &[u8], bonds: &[[usize; 2]]) -> Result<Self, GraphError> {
-        let mut g = Self::new();
+        let mut graph = Self::new();
         for &atomic_number in atomic_numbers {
-            g.add_atom(atomic_number)?;
+            graph.add_atom(atomic_number)?;
         }
         for &[atom1, atom2] in bonds {
-            g.add_bond(AtomIndex::new(atom1), AtomIndex::new(atom2))?;
+            graph.add_bond(AtomIndex::new(atom1), AtomIndex::new(atom2))?;
         }
-        Ok(g)
+        Ok(graph)
     }
 
     // Mutators
@@ -152,7 +152,7 @@ impl MolGraph {
         self.adjacency
             .get(atom1.index())?
             .iter()
-            .find_map(|&(a, b)| (a == atom2).then_some(b))
+            .find_map(|&(neighbor, bond)| (neighbor == atom2).then_some(bond))
     }
 
     /// The two atoms joined by `bond`, or `None` if it's out of range.
@@ -191,7 +191,9 @@ impl MolGraph {
     ///
     /// Panics if `atom` is out of range.
     pub fn neighbors(&self, atom: AtomIndex) -> impl Iterator<Item = AtomIndex> + '_ {
-        self.adjacency[atom.index()].iter().map(|&(a, _)| a)
+        self.adjacency[atom.index()]
+            .iter()
+            .map(|&(neighbor, _)| neighbor)
     }
 
     // Derived properties
@@ -216,7 +218,7 @@ impl MolGraph {
             .iter()
             .copied()
             .map(element::symbol)
-            .map(|s| s.expect("add_atom should only accept valid atomic numbers"))
+            .map(|symbol| symbol.expect("add_atom should only accept valid atomic numbers"))
             .collect()
     }
 
@@ -251,7 +253,7 @@ impl MolGraph {
         // sort the counts
         let has_carbon = counts.contains_key("C");
         let mut sorted_counts: Vec<(&str, usize)> = counts.into_iter().collect();
-        sorted_counts.sort_unstable_by_key(|c| hill_key(c.0, has_carbon));
+        sorted_counts.sort_unstable_by_key(|&(symbol, _)| hill_key(symbol, has_carbon));
         // build formula
         let mut formula = String::new();
         for (symbol, count) in sorted_counts {
@@ -320,11 +322,11 @@ impl MolGraph {
     pub fn components(&self) -> Vec<Vec<AtomIndex>> {
         let mut visited = Visited::new(self.atom_count());
         self.atoms()
-            // Map `a` to its flattened BFS, recording the atoms as visited
-            .filter_map(|a| {
-                // Skip `a` if it was already visited
-                (!visited.contains(a))
-                    .then(|| self.layers_from(a, &mut visited).flatten().collect())
+            // Map `atom` to its flattened BFS, recording the atoms as visited
+            .filter_map(|atom| {
+                // Skip `atom` if it was already visited
+                (!visited.contains(atom))
+                    .then(|| self.layers_from(atom, &mut visited).flatten().collect())
             })
             .collect()
     }
@@ -343,8 +345,8 @@ impl MolGraph {
         std::iter::successors(Some(vec![start]), |layer| {
             let next: Vec<_> = layer
                 .iter()
-                .flat_map(|&a| self.neighbors(a))
-                .filter(|&a| visited.insert(a))
+                .flat_map(|&atom| self.neighbors(atom))
+                .filter(|&neighbor| visited.insert(neighbor))
                 .collect();
             (!next.is_empty()).then_some(next)
         })

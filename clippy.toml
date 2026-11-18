@@ -1,0 +1,4 @@
+# Single-letter names allowed by `min_ident_chars`, each with one meaning everywhere:
+# e = an error, f = a fmt::Formatter, i/j = integer counters or positions,
+# z = an atomic number, c = a char or byte in the lexer.
+allowed-idents-below-min-chars = ["e", "f", "i", "j", "z", "c"]

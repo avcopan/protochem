@@ -39,6 +39,7 @@ rust_2018_idioms = { level = "warn", priority = -1 }  # explicit `'_` in paths
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 cargo_common_metadata = "warn"  # C-METADATA
+min_ident_chars = "warn"  # single letters only from clippy.toml (rust-style.md, "Naming")
 
 # Optimizations for release builds (of both crates)
 [profile.release]

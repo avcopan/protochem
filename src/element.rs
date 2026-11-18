@@ -50,7 +50,7 @@ impl Element {
     /// ```
     #[must_use]
     pub fn from_symbol(symbol: &str) -> Option<&'static Self> {
-        ELEMENTS.iter().find(|e| e.symbol == symbol)
+        ELEMENTS.iter().find(|element| element.symbol == symbol)
     }
 
     /// Look up an element by atomic number.
@@ -90,7 +90,7 @@ impl Element {
 pub fn symbol(atomic_number: u8) -> Option<&'static str> {
     match atomic_number {
         0 => Some("*"),
-        z => Element::from_atomic_number(z).map(|e| e.symbol),
+        z => Element::from_atomic_number(z).map(|element| element.symbol),
     }
 }
 
@@ -172,8 +172,11 @@ pub fn is_organic(atomic_number: u8) -> bool {
 pub fn implicit_hydrogens(atomic_number: u8, bond_order_sum: u8) -> Option<u8> {
     let valences = organic_valences(atomic_number);
     let [_, ..] = valences else { return None };
-    let valence = valences.iter().copied().find(|&v| v >= bond_order_sum);
-    Some(valence.map_or(0, |v| v - bond_order_sum))
+    let valence = valences
+        .iter()
+        .copied()
+        .find(|&valence| valence >= bond_order_sum);
+    Some(valence.map_or(0, |valence| valence - bond_order_sum))
 }
 
 #[cfg(test)]
@@ -205,7 +208,7 @@ mod tests {
     #[test]
     fn from_symbol_is_case_sensitive() {
         assert_eq!(
-            Element::from_symbol("Cl").map(|e| e.atomic_number),
+            Element::from_symbol("Cl").map(|element| element.atomic_number),
             Some(17)
         );
         assert_eq!(Element::from_symbol("CL"), None);

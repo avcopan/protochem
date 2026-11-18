@@ -212,7 +212,7 @@ impl fmt::Display for LexErrorKind {
         match self {
             Self::UnexpectedCharacter(c) => write!(f, "unexpected character {c:?}"),
             Self::UnexpectedEnd => write!(f, "unexpected end of input"),
-            Self::UnknownElement(s) => write!(f, "unknown element {s:?}"),
+            Self::UnknownElement(symbol) => write!(f, "unknown element {symbol:?}"),
             Self::NumberOutOfRange => write!(f, "number out of range"),
         }
     }
@@ -241,7 +241,7 @@ fn next_token(scanner: &mut Scanner<'_>) -> Result<Option<Token>, LexError> {
         b'(' => Token::BranchOpen,
         b')' => Token::BranchClose,
         // Ring closures
-        d @ b'0'..=b'9' => Token::RingClosure(d - b'0'),
+        digit @ b'0'..=b'9' => Token::RingClosure(digit - b'0'),
         b'%' => {
             let tens = scanner.take_digit().ok_or_else(|| scanner.unexpected())?;
             let ones = scanner.take_digit().ok_or_else(|| scanner.unexpected())?;
@@ -344,16 +344,17 @@ impl<'a> Scanner<'a> {
         self.take_if(|c| c == expected).is_some()
     }
 
-    fn take_str(&mut self, s: &str) -> bool {
-        let matches = self.input[self.cursor..].starts_with(s);
+    fn take_str(&mut self, text: &str) -> bool {
+        let matches = self.input[self.cursor..].starts_with(text);
         if matches {
-            self.cursor += s.len();
+            self.cursor += text.len();
         }
         matches
     }
 
     fn take_digit(&mut self) -> Option<u8> {
-        self.take_if(|c| c.is_ascii_digit()).map(|d| d - b'0')
+        self.take_if(|c| c.is_ascii_digit())
+            .map(|digit| digit - b'0')
     }
 
     fn slice(&self, start: usize) -> &'a str {
@@ -545,11 +546,20 @@ mod tests {
             ])
         );
 
-        let ring = |n| Token::RingClosure(n);
-        let c = aromatic(6);
+        let ring = |number| Token::RingClosure(number);
+        let carbon = aromatic(6);
         assert_eq!(
             lex("c1ccccc1"),
-            Ok(vec![c, ring(1), c, c, c, c, c, ring(1)])
+            Ok(vec![
+                carbon,
+                ring(1),
+                carbon,
+                carbon,
+                carbon,
+                carbon,
+                carbon,
+                ring(1)
+            ])
         );
 
         // L-alanine
