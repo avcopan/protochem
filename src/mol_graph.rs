@@ -58,12 +58,15 @@ impl MolGraph {
     /// # Panics
     ///
     /// Panics if a position doesn't fit in a `u32`.
-    pub fn from_bonds(atomic_numbers: &[u8], bonds: &[[usize; 2]]) -> Result<Self, GraphError> {
+    pub fn from_bonds(
+        atomic_numbers: &[u8],
+        bond_atoms: &[[usize; 2]],
+    ) -> Result<Self, GraphError> {
         let mut graph = Self::new();
         for &atomic_number in atomic_numbers {
             graph.add_atom(atomic_number)?;
         }
-        for &[atom1, atom2] in bonds {
+        for &[atom1, atom2] in bond_atoms {
             graph.add_bond(AtomIndex::new(atom1), AtomIndex::new(atom2))?;
         }
         Ok(graph)
@@ -235,8 +238,8 @@ impl MolGraph {
     ///
     /// // Ethanol, CH3CH2OH
     /// let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
-    /// let bonds = [[0, 1], [1, 2], [0, 3], [0, 4], [0, 5], [1, 6], [1, 7], [2, 8]];
-    /// let graph = MolGraph::from_bonds(&atomic_numbers, &bonds).unwrap();
+    /// let bond_atoms = [[0, 1], [1, 2], [0, 3], [0, 4], [0, 5], [1, 6], [1, 7], [2, 8]];
+    /// let graph = MolGraph::from_bonds(&atomic_numbers, &bond_atoms).unwrap();
     /// assert_eq!(graph.formula(), "C2H6O");
     ///
     /// // Without carbon, hydrogen is sorted alphabetically
@@ -283,8 +286,8 @@ impl MolGraph {
     /// use protochem::{AtomIndex, MolGraph};
     ///
     /// // Cyclohexane's carbon ring
-    /// let bonds = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
-    /// let graph = MolGraph::from_bonds(&[6; 6], &bonds).unwrap();
+    /// let bond_atoms = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
+    /// let graph = MolGraph::from_bonds(&[6; 6], &bond_atoms).unwrap();
     /// let layers = graph.bfs_layers(AtomIndex::new(0));
     /// assert_eq!(layers.len(), 4);
     /// assert_eq!(layers[1], [1, 5].map(AtomIndex::new));
@@ -464,7 +467,7 @@ mod tests {
     // Ethanol with explicit hydrogens: C0-C1-O2, H3-H5 on C0, H6-H7 on C1, H8 on O2.
     fn ethanol() -> MolGraph {
         let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
-        let bonds = [
+        let bond_atoms = [
             [0, 1],
             [1, 2],
             [0, 3],
@@ -474,13 +477,13 @@ mod tests {
             [1, 7],
             [2, 8],
         ];
-        MolGraph::from_bonds(&atomic_numbers, &bonds).unwrap()
+        MolGraph::from_bonds(&atomic_numbers, &bond_atoms).unwrap()
     }
 
     // Cyclohexane's carbon ring, without hydrogens.
     fn cyclohexane() -> MolGraph {
-        let bonds = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
-        MolGraph::from_bonds(&[6; 6], &bonds).unwrap()
+        let bond_atoms = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0]];
+        MolGraph::from_bonds(&[6; 6], &bond_atoms).unwrap()
     }
 
     // Atom groups as plain positions, for short expected values.
@@ -657,9 +660,9 @@ mod tests {
 
     #[test]
     fn components() {
-        let components = |atomic_numbers: &[u8], bonds: &[[usize; 2]]| {
+        let components = |atomic_numbers: &[u8], bond_atoms: &[[usize; 2]]| {
             positions(
-                MolGraph::from_bonds(atomic_numbers, bonds)
+                MolGraph::from_bonds(atomic_numbers, bond_atoms)
                     .unwrap()
                     .components(),
             )
