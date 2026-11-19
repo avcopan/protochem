@@ -7,7 +7,7 @@
 //! skeleton's [`AtomIndex`] and [`BondIndex`] and associates them with
 //! additional [`AtomData`] and [`BondOrder`]s. The skeleton's methods are used
 //! for graph traversal.
-use crate::element::hill_formula;
+use crate::element::{self, hill_formula};
 use crate::{AtomIndex, BondIndex, GraphError, MolGraph};
 
 /// A molecular graph with bond orders, formal charges, and implicit hydrogens.
@@ -127,6 +127,72 @@ impl LewisGraph {
         self.bond_orders.get(bond.index()).copied()
     }
 
+    // Conversions
+
+    /// The [`MolGraph`] of this structure, with implicit hydrogens appended as
+    /// explicit atoms.
+    ///
+    /// **Index rule:** The atom and bond indices match the original skeleton
+    /// [`MolGraph`], with hydrogens and their bonds appended to the end of the
+    /// atom and bond lists in the order of the atoms they're bonded to.
+    ///
+    /// The net charge is the sum of the atoms' formal charges. The net spin is
+    /// the sum of the atoms' unpaired electrons. For each atom, take the
+    /// electrons it uses (its bond-order sum plus its hydrogens) and the
+    /// smallest default valence that is at least that many. The difference
+    /// is its unpaired electrons, minus one for an aromatic atom. A charged
+    /// atom has the valences of the neutral atom with as many electrons
+    /// (atomic number minus charge), so N+ has those of C. Hydrogen has
+    /// valence 1. Elements outside the SMILES organic subset have no unpaired
+    /// electrons.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::{AtomData, AtomIndex, BondOrder, LewisGraph};
+    ///
+    /// // The methyl radical, [CH3]
+    /// let mut methyl = LewisGraph::new();
+    /// methyl.add_atom(AtomData { hydrogens: 3, ..AtomData::new(6) }).unwrap();
+    /// let graph = methyl.to_mol_graph();
+    /// assert_eq!(graph.atom_count(), 4);
+    /// assert_eq!(graph.spin(), 1);
+    ///
+    /// // Hydroxide, [OH-], keeps the oxygen at index 0
+    /// let mut hydroxide = LewisGraph::new();
+    /// hydroxide.add_atom(AtomData { charge: -1, hydrogens: 1, ..AtomData::new(8) }).unwrap();
+    /// let graph = hydroxide.to_mol_graph();
+    /// assert_eq!(graph.atomic_number(AtomIndex::new(0)), Some(8));
+    /// assert_eq!((graph.charge(), graph.spin()), (-1, 0));
+    /// ```
+    #[must_use]
+    #[expect(
+        clippy::missing_panics_doc,
+        reason = "adding a hydrogen atom and its one bond can't fail"
+    )]
+    pub fn to_mol_graph(&self) -> MolGraph {
+        let bond_order_sums = self.bond_order_sums();
+        let mut graph = self.skeleton.clone();
+        let mut charge: i8 = 0;
+        let mut spin: u8 = 0;
+        for (atom, data) in self.skeleton.atoms().zip(&self.atom_data) {
+            for _ in 0..data.hydrogens {
+                let hydrogen = graph.add_atom(1).expect("hydrogen is an element");
+                graph
+                    .add_bond(atom, hydrogen)
+                    .expect("just-added atom has no bonds");
+            }
+            // Add charge increment
+            charge = charge.saturating_add(data.charge);
+            // Calculate and add spin increment
+            let unpaired = data.unpaired_electrons(bond_order_sums[atom.index()]);
+            spin = spin.saturating_add(unpaired);
+        }
+        graph.set_charge(charge);
+        graph.set_spin(spin);
+        graph
+    }
+
     // Derived properties
 
     /// The molecular formula in Hill order, counting the implicit hydrogens.
@@ -155,6 +221,22 @@ impl LewisGraph {
             *counts.entry(1).or_insert(0) += hydrogens;
         }
         hill_formula(&counts)
+    }
+
+    /// The sums of the bond-order valences (see [`BondOrder::valence`]), by
+    /// [`AtomIndex`].
+    fn bond_order_sums(&self) -> Vec<u8> {
+        let mut sums = vec![0u8; self.skeleton.atom_count()];
+        for (bond, order) in self.skeleton.bonds().zip(&self.bond_orders) {
+            let atoms = self
+                .skeleton
+                .bond_atoms(bond)
+                .expect("the skeleton's bonds should be in range");
+            for atom in atoms {
+                sums[atom.index()] = sums[atom.index()].saturating_add(order.valence());
+            }
+        }
+        sums
     }
 }
 
@@ -197,6 +279,23 @@ impl AtomData {
             hydrogens: 0,
             aromatic: false,
         }
+    }
+
+    pub(crate) fn unpaired_electrons(self, bond_order_sum: u8) -> u8 {
+        let used = bond_order_sum.saturating_add(self.hydrogens);
+        let isoelectronic = i16::from(self.atomic_number) - i16::from(self.charge);
+        let Ok(atomic_number) = u8::try_from(isoelectronic) else {
+            return 0;
+        };
+        let valences = match atomic_number {
+            1 => &[1],
+            z => element::organic_valences(z),
+        };
+        valences
+            .iter()
+            .find(|&&valence| valence >= used)
+            .map_or(0, |valence| valence - used)
+            .saturating_sub(u8::from(self.aromatic))
     }
 }
 
@@ -253,13 +352,6 @@ impl BondOrder {
     /// `BondOrder::Aromatic` and `BondOrder::Single` is still important for
     /// distinguishing between bonds participating in the aromatic ring and
     /// bonds connecting separate aromatic systems (e.g. c1ccccc1-c2ccccc2).
-    #[cfg_attr(
-        not(test),
-        expect(
-            dead_code,
-            reason = "used by `to_mol_graph` and the builder (M1.1 steps 4 and 8)"
-        )
-    )]
     pub(crate) fn valence(self) -> u8 {
         self.order().unwrap_or(1)
     }
@@ -386,5 +478,149 @@ mod tests {
         assert_eq!(numbers, [Some(1), Some(2), Some(3), Some(4), None]);
         let valences: Vec<_> = orders.iter().map(|order| order.valence()).collect();
         assert_eq!(valences, [1, 2, 3, 4, 1]);
+    }
+
+    /// A graph of these atoms, with a single bond between each pair of
+    /// positions in `bond_atoms`.
+    fn lewis_graph(atom_data: &[AtomData], bond_atoms: &[[usize; 2]]) -> LewisGraph {
+        let mut graph = LewisGraph::new();
+        for &data in atom_data {
+            graph.add_atom(data).unwrap();
+        }
+        for &[atom1, atom2] in bond_atoms {
+            graph
+                .add_bond(
+                    AtomIndex::new(atom1),
+                    AtomIndex::new(atom2),
+                    BondOrder::Single,
+                )
+                .unwrap();
+        }
+        graph
+    }
+
+    /// An atom with this charge and hydrogen count.
+    fn atom(atomic_number: u8, charge: i8, hydrogens: u8) -> AtomData {
+        AtomData {
+            charge,
+            hydrogens,
+            ..AtomData::new(atomic_number)
+        }
+    }
+
+    /// The charge and spin of a one-atom graph.
+    fn charge_and_spin(data: AtomData) -> (i8, u8) {
+        let graph = lewis_graph(&[data], &[]).to_mol_graph();
+        (graph.charge(), graph.spin())
+    }
+
+    #[test]
+    fn to_mol_graph_appends_hydrogens_by_the_index_rule() {
+        // Ethanol, C0-C1-O2, as in MolGraph's `ethanol()` fixture
+        let graph = lewis_graph(
+            &[atom(6, 0, 3), atom(6, 0, 2), atom(8, 0, 1)],
+            &[[0, 1], [1, 2]],
+        );
+        let atomic_numbers = [6, 6, 8, 1, 1, 1, 1, 1, 1];
+        let bond_atoms = [
+            [0, 1],
+            [1, 2],
+            [0, 3],
+            [0, 4],
+            [0, 5],
+            [1, 6],
+            [1, 7],
+            [2, 8],
+        ];
+        let expected = MolGraph::from_bonds(&atomic_numbers, &bond_atoms).unwrap();
+        assert_eq!(graph.to_mol_graph(), expected);
+    }
+
+    #[test]
+    fn to_mol_graph_counts_hydrogen_counts_and_hydrogen_atoms() {
+        // Methanol: three methyl hydrogens as a count, the hydroxyl one as an atom
+        let methanol = lewis_graph(
+            &[atom(6, 0, 3), atom(8, 0, 0), atom(1, 0, 0)],
+            &[[0, 1], [1, 2]],
+        );
+        assert_eq!(methanol.to_mol_graph().formula(), "CH4O");
+        let borane = lewis_graph(&[atom(5, 0, 3)], &[]);
+        assert_eq!(borane.to_mol_graph().formula(), "BH3");
+    }
+
+    #[test]
+    fn to_mol_graph_closed_shells_have_no_spin() {
+        let cases = [
+            ("CH4", atom(6, 0, 4)),
+            ("BH3", atom(5, 0, 3)),
+            ("NH4+", atom(7, 1, 4)),
+            ("BH4-", atom(5, -1, 4)),
+            ("H3O+", atom(8, 1, 3)),
+            ("CH3+", atom(6, 1, 3)),
+            ("CH3-", atom(6, -1, 3)),
+            ("H-", atom(1, -1, 0)),
+            ("H+", atom(1, 1, 0)),
+            ("Ne", atom(10, 0, 0)),
+            ("Na+", atom(11, 1, 0)),
+            ("Fe", atom(26, 0, 0)),
+        ];
+        for (name, data) in cases {
+            assert_eq!(charge_and_spin(data), (data.charge, 0), "{name}");
+        }
+    }
+
+    #[test]
+    fn to_mol_graph_counts_unpaired_electrons() {
+        let cases = [
+            ("CH3", atom(6, 0, 3), 1),
+            ("CH2", atom(6, 0, 2), 2),
+            ("OH", atom(8, 0, 1), 1),
+            ("H", atom(1, 0, 0), 1),
+            ("O", atom(8, 0, 0), 2),
+        ];
+        for (name, data, spin) in cases {
+            assert_eq!(charge_and_spin(data), (0, spin), "{name}");
+        }
+        // Triplet O2, with a single bond between the oxygens
+        let oxygen = lewis_graph(&[atom(8, 0, 0), atom(8, 0, 0)], &[[0, 1]]);
+        assert_eq!(oxygen.to_mol_graph().spin(), 2);
+    }
+
+    #[test]
+    fn to_mol_graph_sums_the_charges() {
+        let salt = lewis_graph(&[atom(11, 1, 0), atom(17, -1, 0)], &[]);
+        let graph = salt.to_mol_graph();
+        assert_eq!((graph.charge(), graph.spin()), (0, 0));
+    }
+
+    /// A six-membered aromatic carbon ring, with these hydrogen counts.
+    fn aromatic_ring(hydrogens: [u8; 6]) -> LewisGraph {
+        let mut graph = LewisGraph::new();
+        let atoms: Vec<_> = hydrogens
+            .iter()
+            .map(|&hydrogens| {
+                let data = AtomData {
+                    hydrogens,
+                    aromatic: true,
+                    ..AtomData::new(6)
+                };
+                graph.add_atom(data).unwrap()
+            })
+            .collect();
+        for (i, &atom) in atoms.iter().enumerate() {
+            let next = atoms[(i + 1) % atoms.len()];
+            graph.add_bond(atom, next, BondOrder::Aromatic).unwrap();
+        }
+        graph
+    }
+
+    #[test]
+    fn to_mol_graph_aromatic_atoms() {
+        let benzene = aromatic_ring([1; 6]).to_mol_graph();
+        assert_eq!(benzene.formula(), "C6H6");
+        assert_eq!(benzene.spin(), 0);
+        // Phenyl radical: one carbon without its hydrogen
+        let phenyl = aromatic_ring([0, 1, 1, 1, 1, 1]).to_mol_graph();
+        assert_eq!(phenyl.spin(), 1);
     }
 }
