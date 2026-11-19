@@ -10,8 +10,8 @@
 //! and the algorithms panic instead.
 //!
 //! [`MolGraph::bfs_layers`] and [`MolGraph::components`] are the graph algorithms.
-use crate::element;
-use std::collections::HashMap;
+use crate::element::{self, hill_formula};
+use std::collections::BTreeMap;
 use std::fmt;
 
 /// An undirected molecular graph without self-loops or multiple bonds.
@@ -254,6 +254,16 @@ impl MolGraph {
             .collect()
     }
 
+    /// The number of atoms of each element, keyed and ordered by atomic number.
+    #[must_use]
+    pub fn element_counts(&self) -> BTreeMap<u8, usize> {
+        let mut counts = BTreeMap::new();
+        for &atomic_number in &self.atomic_numbers {
+            *counts.entry(atomic_number).or_insert(0) += 1;
+        }
+        counts
+    }
+
     /// The molecular formula in Hill order.
     ///
     /// With carbon present, carbon comes first, then hydrogen, then the other symbols
@@ -277,24 +287,8 @@ impl MolGraph {
     /// ```
     #[must_use]
     pub fn formula(&self) -> String {
-        // count occurrences of each symbol
-        let mut counts: HashMap<&str, usize> = HashMap::new();
-        for symbol in self.symbols() {
-            *counts.entry(symbol).or_insert(0) += 1;
-        }
-        // sort the counts
-        let has_carbon = counts.contains_key("C");
-        let mut sorted_counts: Vec<(&str, usize)> = counts.into_iter().collect();
-        sorted_counts.sort_unstable_by_key(|&(symbol, _)| hill_key(symbol, has_carbon));
-        // build formula
-        let mut formula = String::new();
-        for (symbol, count) in sorted_counts {
-            formula.push_str(symbol);
-            if count > 1 {
-                formula.push_str(&count.to_string());
-            }
-        }
-        formula
+        let counts = self.element_counts();
+        hill_formula(&counts)
     }
 
     // Algorithms
@@ -457,14 +451,6 @@ impl fmt::Display for GraphError {
 }
 
 impl std::error::Error for GraphError {}
-
-fn hill_key(symbol: &str, has_carbon: bool) -> (u8, &str) {
-    match symbol {
-        "C" if has_carbon => (0, "C"),
-        "H" if has_carbon => (1, "H"),
-        symbol => (2, symbol),
-    }
-}
 
 /// The set of atoms a search has visited, as a `Vec<bool>` indexed by atom.
 struct Visited(Vec<bool>);
@@ -640,6 +626,15 @@ mod tests {
             graph.add_bond(AtomIndex::new(0), atom).unwrap();
         }
         assert_eq!(graph.degree(AtomIndex::new(0)), 2);
+    }
+
+    #[test]
+    fn element_counts() {
+        // Ethanol's heavy atoms, and a wildcard
+        let graph = MolGraph::from_bonds(&[6, 6, 8, 0], &[]).unwrap();
+        let counts = graph.element_counts();
+        assert_eq!(counts, BTreeMap::from([(0, 1), (6, 2), (8, 1)]));
+        assert!(MolGraph::new().element_counts().is_empty());
     }
 
     #[test]

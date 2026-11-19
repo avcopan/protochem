@@ -5,6 +5,8 @@
 //! `&Element` refers to a real element.
 
 mod data;
+use std::collections::BTreeMap;
+
 use data::ELEMENTS;
 
 /// A chemical element.
@@ -179,6 +181,41 @@ pub fn implicit_hydrogens(atomic_number: u8, bond_order_sum: u8) -> Option<u8> {
     Some(valence.map_or(0, |valence| valence - bond_order_sum))
 }
 
+/// Format element counts as a Hill formula.
+pub(crate) fn hill_formula(element_counts: &BTreeMap<u8, usize>) -> String {
+    // sort the counts
+    let has_carbon = element_counts.get(&6).is_some_and(|&count| count > 0);
+    let mut sorted_counts: Vec<(&'static str, usize)> = element_counts
+        .iter()
+        .filter(|&(_, &count)| count > 0)
+        .map(|(&z, &count)| {
+            (
+                symbol(z).expect("counts should be keyed by valid atomic numbers"),
+                count,
+            )
+        })
+        .collect();
+    sorted_counts.sort_unstable_by_key(|&(symbol, _)| hill_key(symbol, has_carbon));
+    // build formula
+    let mut formula = String::new();
+    for (symbol, count) in sorted_counts {
+        formula.push_str(symbol);
+        if count > 1 {
+            formula.push_str(&count.to_string());
+        }
+    }
+    formula
+}
+
+/// Key for sorting symbols in Hill order.
+fn hill_key(symbol: &str, has_carbon: bool) -> (u8, &str) {
+    match symbol {
+        "C" if has_carbon => (0, "C"),
+        "H" if has_carbon => (1, "H"),
+        symbol => (2, symbol),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -258,5 +295,14 @@ mod tests {
             let expected = organic_valences(atomic_number).first().copied();
             assert_eq!(implicit_hydrogens(atomic_number, 0), expected);
         }
+    }
+
+    #[test]
+    fn hill_formula_skips_zero_counts() {
+        // A zero carbon count doesn't put the formula in carbon order
+        let counts = BTreeMap::from([(1, 3), (5, 1), (6, 0)]);
+        assert_eq!(hill_formula(&counts), "BH3");
+        let counts = BTreeMap::from([(1, 4), (6, 1), (8, 0)]);
+        assert_eq!(hill_formula(&counts), "CH4");
     }
 }

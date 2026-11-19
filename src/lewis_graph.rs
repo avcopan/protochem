@@ -1,0 +1,390 @@
+//! One Lewis structure of a molecule: a graph with implicit hydrogens, bond
+//! orders, and formal charges.
+//!
+//! A `LewisGraph` is built on a `MolGraph`, which defines its
+//! [`skeleton`](LewisGraph::skeleton): the explicit atoms and the bonds between
+//! them. It can be thought of as a deserialized SMILES string. It shares the
+//! skeleton's [`AtomIndex`] and [`BondIndex`] and associates them with
+//! additional [`AtomData`] and [`BondOrder`]s. The skeleton's methods are used
+//! for graph traversal.
+use crate::element::hill_formula;
+use crate::{AtomIndex, BondIndex, GraphError, MolGraph};
+
+/// A molecular graph with bond orders, formal charges, and implicit hydrogens.
+///
+/// It holds a [`MolGraph`] skeleton and the Lewis structure data for each of
+/// its atoms and bonds. Use the [`skeleton`](Self::skeleton) for graph queries,
+/// such as neighbors and atom counts (minus implicit hydrogens).
+///
+/// # Examples
+///
+/// ```
+/// use protochem::{AtomData, BondOrder, LewisGraph};
+///
+/// // Formaldehyde (H2C=O)
+/// let mut graph = LewisGraph::new();
+/// let carbon = graph.add_atom(AtomData { hydrogens: 2, ..AtomData::new(6) }).unwrap();
+/// let oxygen = graph.add_atom(8).unwrap();
+/// let bond = graph.add_bond(carbon, oxygen, BondOrder::Double).unwrap();
+/// assert_eq!(graph.bond_order(bond), Some(BondOrder::Double));
+/// assert_eq!(graph.skeleton().atom_count(), 2);
+/// assert_eq!(graph.formula(), "CH2O");
+/// ```
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct LewisGraph {
+    /// The explicit atoms and their bonds.
+    skeleton: MolGraph,
+    /// The data of each atom, by [`AtomIndex`].
+    atom_data: Vec<AtomData>,
+    /// The order of each bond, by [`BondIndex`].
+    bond_orders: Vec<BondOrder>,
+}
+
+impl LewisGraph {
+    // Constructors
+
+    /// Create an empty graph.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    // Mutators
+
+    /// Add an atom and return its index.
+    ///
+    /// Take an [`AtomData`] or anything that converts into one, such as a bare
+    /// atomic number, which becomes a bare neutral atom.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`GraphError`] if the skeleton rejects the atom (see
+    /// [`MolGraph::add_atom`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new atom's index doesn't fit in a `u32`.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::{AtomData, LewisGraph};
+    ///
+    /// let mut graph = LewisGraph::new();
+    /// let carbon = graph.add_atom(6).unwrap();
+    /// let ammonium = graph.add_atom(AtomData { charge: 1, hydrogens: 4, ..AtomData::new(7) }).unwrap();
+    /// assert_eq!(graph.atom_data(carbon), Some(AtomData::new(6)));
+    /// assert_eq!(graph.atom_data(ammonium).map(|data| data.atomic_number), Some(7));
+    /// assert_eq!(graph.atom_data(ammonium).map(|data| data.charge), Some(1));
+    /// assert_eq!(graph.atom_data(ammonium).map(|data| data.hydrogens), Some(4));
+    /// ```
+    pub fn add_atom(&mut self, data: impl Into<AtomData>) -> Result<AtomIndex, GraphError> {
+        let data = data.into();
+        let atom = self.skeleton.add_atom(data.atomic_number)?;
+        self.atom_data.push(data);
+        Ok(atom)
+    }
+
+    /// Add a bond of the given order between `atom1` and `atom2` and return its
+    /// index.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`GraphError`] if the skeleton rejects the bond (see
+    /// [`MolGraph::add_bond`]).
+    ///
+    /// # Panics
+    ///
+    /// Panics if the new bond's index doesn't fit in a `u32`.
+    pub fn add_bond(
+        &mut self,
+        atom1: AtomIndex,
+        atom2: AtomIndex,
+        order: BondOrder,
+    ) -> Result<BondIndex, GraphError> {
+        let bond = self.skeleton.add_bond(atom1, atom2)?;
+        self.bond_orders.push(order);
+        Ok(bond)
+    }
+
+    // Accessors
+
+    /// The skeleton: the explicit atoms and their bonds.
+    #[must_use]
+    pub fn skeleton(&self) -> &MolGraph {
+        &self.skeleton
+    }
+
+    /// The data of `atom`, or `None` if `atom.index()` is out of range.
+    #[must_use]
+    pub fn atom_data(&self, atom: AtomIndex) -> Option<AtomData> {
+        self.atom_data.get(atom.index()).copied()
+    }
+
+    /// The order of `bond`, or `None` if `bond.index()` is out of range.
+    #[must_use]
+    pub fn bond_order(&self, bond: BondIndex) -> Option<BondOrder> {
+        self.bond_orders.get(bond.index()).copied()
+    }
+
+    // Derived properties
+
+    /// The molecular formula in Hill order, counting the implicit hydrogens.
+    ///
+    /// See [`MolGraph::formula`] for the order.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::{AtomData, LewisGraph};
+    ///
+    /// // Borane, BH3: no carbon, so the symbols are in alphabetical order
+    /// let mut graph = LewisGraph::new();
+    /// graph.add_atom(AtomData { hydrogens: 3, ..AtomData::new(5) }).unwrap();
+    /// assert_eq!(graph.formula(), "BH3");
+    /// ```
+    #[must_use]
+    pub fn formula(&self) -> String {
+        let mut counts = self.skeleton.element_counts();
+        let hydrogens: usize = self
+            .atom_data
+            .iter()
+            .map(|data| usize::from(data.hydrogens))
+            .sum();
+        if hydrogens > 0 {
+            *counts.entry(1).or_insert(0) += hydrogens;
+        }
+        hill_formula(&counts)
+    }
+}
+
+/// The data of one atom in a [`LewisGraph`].
+///
+/// Build one with [`AtomData::new`] and struct update syntax, or convert an
+/// atomic number with `From`/`Into`. Both give a neutral, non-aromatic atom
+/// with no hydrogens.
+///
+/// # Examples
+///
+/// ```
+/// use protochem::AtomData;
+///
+/// // The oxygen of hydroxide, [OH-]
+/// let oxygen = AtomData { charge: -1, hydrogens: 1, ..AtomData::new(8) };
+/// assert_eq!(oxygen.atomic_number, 8);
+/// assert_eq!(AtomData::from(8), AtomData::new(8));
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct AtomData {
+    /// The atomic number, or `0` for the wildcard `*`.
+    pub atomic_number: u8,
+    /// The formal charge.
+    pub charge: i8,
+    /// The number of hydrogens attached to this atom that aren't atoms of the
+    /// graph.
+    pub hydrogens: u8,
+    /// Whether the atom is aromatic: written lowercase in SMILES.
+    pub aromatic: bool,
+}
+
+impl AtomData {
+    /// A neutral, non-aromatic atom with no hydrogens.
+    #[must_use]
+    pub fn new(atomic_number: u8) -> Self {
+        Self {
+            atomic_number,
+            charge: 0,
+            hydrogens: 0,
+            aromatic: false,
+        }
+    }
+}
+
+impl From<u8> for AtomData {
+    /// The atom [`AtomData::new`] gives for this atomic number.
+    fn from(atomic_number: u8) -> Self {
+        Self::new(atomic_number)
+    }
+}
+
+/// The order of a bond in a [`LewisGraph`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum BondOrder {
+    /// Order 1.
+    Single,
+    /// Order 2.
+    Double,
+    /// Order 3.
+    Triple,
+    /// Order 4.
+    Quadruple,
+    /// A bond in an aromatic ring, whose order depends on the Kekulé structure.
+    Aromatic,
+}
+
+impl BondOrder {
+    /// The bond order as a number, or `None` for an aromatic bond.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use protochem::BondOrder;
+    ///
+    /// assert_eq!(BondOrder::Double.order(), Some(2));
+    /// assert_eq!(BondOrder::Aromatic.order(), None);
+    /// ```
+    #[must_use]
+    pub fn order(self) -> Option<u8> {
+        match self {
+            Self::Single => Some(1),
+            Self::Double => Some(2),
+            Self::Triple => Some(3),
+            Self::Quadruple => Some(4),
+            Self::Aromatic => None,
+        }
+    }
+
+    /// What each bond adds to each atom's valence, for counting hydrogens and
+    /// unpaired electrons.
+    ///
+    /// An aromatic bond contributes a valence of 1, like a sigma bond, with the
+    /// extra π valence of the aromatic atom determined from the
+    /// [`AtomData::aromatic`] property. The distinction between
+    /// `BondOrder::Aromatic` and `BondOrder::Single` is still important for
+    /// distinguishing between bonds participating in the aromatic ring and
+    /// bonds connecting separate aromatic systems (e.g. c1ccccc1-c2ccccc2).
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "used by `to_mol_graph` and the builder (M1.1 steps 4 and 8)"
+        )
+    )]
+    pub(crate) fn valence(self) -> u8 {
+        self.order().unwrap_or(1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn add_atom_stores_the_data() {
+        let mut graph = LewisGraph::new();
+        let ammonium = AtomData {
+            charge: 1,
+            hydrogens: 4,
+            ..AtomData::new(7)
+        };
+        let atom = graph.add_atom(ammonium).unwrap();
+        assert_eq!(graph.atom_data(atom), Some(ammonium));
+        assert_eq!(graph.skeleton().atomic_number(atom), Some(7));
+        assert_eq!(graph.atom_data(AtomIndex::new(1)), None);
+    }
+
+    #[test]
+    fn add_atom_rejects_unknown_elements() {
+        let mut graph = LewisGraph::new();
+        let unknown = AtomData {
+            charge: 1,
+            ..AtomData::new(200)
+        };
+        assert_eq!(
+            graph.add_atom(unknown),
+            Err(GraphError::UnknownElement(200))
+        );
+        // A rejected atom changes nothing
+        assert_eq!(graph, LewisGraph::new());
+    }
+
+    #[test]
+    fn add_bond_stores_the_order() {
+        let mut graph = LewisGraph::new();
+        let carbon = graph.add_atom(6).unwrap();
+        let oxygen = graph.add_atom(8).unwrap();
+        let bond = graph.add_bond(carbon, oxygen, BondOrder::Double).unwrap();
+        assert_eq!(graph.bond_order(bond), Some(BondOrder::Double));
+        assert_eq!(graph.bond_order(BondIndex::new(1)), None);
+    }
+
+    #[test]
+    fn add_bond_rejects_duplicates() {
+        let mut graph = LewisGraph::new();
+        let carbon = graph.add_atom(6).unwrap();
+        let oxygen = graph.add_atom(8).unwrap();
+        let bond = graph.add_bond(carbon, oxygen, BondOrder::Double).unwrap();
+        let before = graph.clone();
+        for (atom1, atom2) in [(carbon, oxygen), (oxygen, carbon)] {
+            assert_eq!(
+                graph.add_bond(atom1, atom2, BondOrder::Single),
+                Err(GraphError::DuplicateBond(bond))
+            );
+        }
+        // A rejected bond gets no order
+        assert_eq!(graph, before);
+    }
+
+    #[test]
+    fn atom_data_from_atomic_number() {
+        let nitrogen: AtomData = 7.into();
+        assert_eq!(nitrogen, AtomData::new(7));
+        assert_eq!(nitrogen.charge, 0);
+        assert_eq!(nitrogen.hydrogens, 0);
+        assert!(!nitrogen.aromatic);
+    }
+
+    #[test]
+    fn graphs_with_different_data_differ() {
+        let mut methane = LewisGraph::new();
+        methane
+            .add_atom(AtomData {
+                hydrogens: 4,
+                ..AtomData::new(6)
+            })
+            .unwrap();
+        let mut carbon = LewisGraph::new();
+        carbon.add_atom(6).unwrap();
+        // Same skeleton, different Lewis data
+        assert_eq!(methane.skeleton(), carbon.skeleton());
+        assert_ne!(methane, carbon);
+    }
+
+    #[test]
+    fn formula_counts_implicit_and_explicit_hydrogens() {
+        // Methanol, with three implicit methyl hydrogens and an explicit H atom
+        let mut graph = LewisGraph::new();
+        let carbon = graph
+            .add_atom(AtomData {
+                hydrogens: 3,
+                ..AtomData::new(6)
+            })
+            .unwrap();
+        let oxygen = graph.add_atom(8).unwrap();
+        let hydrogen = graph.add_atom(1).unwrap();
+        graph.add_bond(carbon, oxygen, BondOrder::Single).unwrap();
+        graph.add_bond(oxygen, hydrogen, BondOrder::Single).unwrap();
+        assert_eq!(graph.formula(), "CH4O");
+        assert_eq!(graph.skeleton().formula(), "CHO");
+    }
+
+    #[test]
+    fn formula_of_an_empty_graph_is_empty() {
+        assert_eq!(LewisGraph::new().formula(), "");
+    }
+
+    #[test]
+    fn bond_order_order_and_valence() {
+        let orders = [
+            BondOrder::Single,
+            BondOrder::Double,
+            BondOrder::Triple,
+            BondOrder::Quadruple,
+            BondOrder::Aromatic,
+        ];
+        let numbers: Vec<_> = orders.iter().map(|order| order.order()).collect();
+        assert_eq!(numbers, [Some(1), Some(2), Some(3), Some(4), None]);
+        let valences: Vec<_> = orders.iter().map(|order| order.valence()).collect();
+        assert_eq!(valences, [1, 2, 3, 4, 1]);
+    }
+}
