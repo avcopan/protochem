@@ -83,6 +83,8 @@ no-build = true
 rust = "*"
 # Standard library source, which rust-analyzer needs to resolve `std`
 rust-src = "*"
+# Rust language server, for the rust-analyzer-lsp Claude Code plugin
+rust-analyzer = "*"
 # Type stub generation
 maturin = ">=1.16"  # 1.16 adds `__all__` to the stub
 # Dependency management
