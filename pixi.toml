@@ -119,6 +119,9 @@ CARGO_TARGET_DIR = "$PIXI_PROJECT_ROOT/target/dev"
 # instead of linking libpython (the Pixi Python ships without it), so that Cargo builds
 # of the Python bindings (`--workspace`, as rust-analyzer's Run buttons use) link
 PYO3_BUILD_EXTENSION_MODULE = "1"
+# Keep uv from syncing a .venv of its own (on `pixi run add`, for example): Pixi manages
+# the environments, and tools such as great-docs prefer a .venv when they find one
+UV_NO_SYNC = "1"
 
 [feature.dev.tasks]
 # Manage pyproject.toml with uv
